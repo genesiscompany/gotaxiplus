@@ -42,40 +42,34 @@ export default function PixPagamento({ empresaId, pedidoId, modulo, colors, onCl
 
   const selecionarComprovante = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    // Android 14+: partial access returns granted=false but accessPrivileges='limited'
-    const denied = !perm.granted && (perm as any).accessPrivileges === "none";
-    if (denied) {
-      Alert.alert("Permissão necessária", "Permita acesso à galeria nas configurações do app para enviar o comprovante.");
+    if (!perm.granted) {
+      Alert.alert("Permissão necessária", "Permita acesso à galeria para enviar o comprovante.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"] as any,
       allowsEditing: false,
       quality: 0.7,
-      base64: false,
+      base64: true,
     });
-    if (!result.canceled && result.assets[0]?.uri) {
+    if (!result.canceled && result.assets[0]?.base64) {
       setEnviando(true);
       try {
-        const uri = result.assets[0].uri;
-        const formData = new FormData();
-        formData.append("file", { uri, name: "comprovante.jpg", type: "image/jpeg" } as any);
-        formData.append("modulo", modulo);
-        formData.append("pedido_id", String(pedidoId ?? ""));
-
         const res = await fetch(`${API_BASE}/public/pedido/comprovante`, {
           method: "POST",
-          body: formData,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            modulo,
+            pedido_id: pedidoId ?? null,
+            imagem_base64: result.assets[0].base64,
+          }),
         });
         if (res.ok) {
           setEnviado(true);
         } else {
-          const errBody = await res.text().catch(() => "");
-          console.warn("[comprovante] server error", res.status, errBody);
           Alert.alert("Erro", "Não foi possível enviar o comprovante. Tente novamente.");
         }
-      } catch (e) {
-        console.warn("[comprovante] fetch error", e);
+      } catch {
         Alert.alert("Erro", "Falha de conexão ao enviar comprovante.");
       } finally {
         setEnviando(false);

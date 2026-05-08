@@ -970,6 +970,4 @@ const styles = StyleSheet.create({
   catHabList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   catHabBadge: { backgroundColor: "#1DB95420", borderWidth: 1.5, borderColor: "#1DB95450", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
   catHabBadgeText: { fontSize: 12, fontWeight: "700", color: "#1DB954" },
-  tipoBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, borderColor: "#2A2A2A", backgroundColor: "#1A1A1A", marginRight: 6, marginBottom: 6 },
-  tipoBtnTxt: { fontSize: 13, fontWeight: "600" as const, color: "#888" },
 });

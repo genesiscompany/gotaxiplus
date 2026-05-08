@@ -137,10 +137,6 @@ export default function ClienteFood() {
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [formaEscolhida, setFormaEscolhida] = useState<string | null>(null);
   const [formasPagamento, setFormasPagamento] = useState<string[]>([]);
-  // Captura a forma de pagamento e parceiro no momento exato do pedido,
-  // evitando race conditions com o estado formaEscolhida em producao (New Arch)
-  const pedidoFormaPagamentoRef = React.useRef<string | null>(null);
-  const pedidoParceiroIdRef = React.useRef<number | null>(null);
   const [modalProduto, setModalProduto] = useState<Produto | null>(null);
   const [tipoEntrega, setTipoEntrega] = useState<"delivery" | "retirar">("delivery");
   const [horarioRetirada, setHorarioRetirada] = useState("");
@@ -404,9 +400,6 @@ export default function ClienteFood() {
       if (formaEscolhida === "credito_gotaxi") {
         setCreditoDisponivel(prev => Math.max(0, prev - totalPedido));
       }
-      // Captura forma e parceiro ANTES do setPedidoFeito para evitar race condition
-      pedidoFormaPagamentoRef.current = formaEscolhida;
-      pedidoParceiroIdRef.current = parceiroSel?.id ?? null;
       setPedidoFeito(true);
       setCarrinho([]);
       if (formaEscolhida !== "pix") {
@@ -415,8 +408,6 @@ export default function ClienteFood() {
           setParceiroSel(null);
           setCardapio(null);
           setFormaEscolhida(null);
-          pedidoFormaPagamentoRef.current = null;
-          pedidoParceiroIdRef.current = null;
         }, 3500);
       }
     } catch {
@@ -430,21 +421,17 @@ export default function ClienteFood() {
 
   // ── Success screen ──────────────────────────────────────────────────────────
   if (pedidoFeito) {
-    const formaPedido = pedidoFormaPagamentoRef.current ?? formaEscolhida;
-    const fpSel = formaPedido ? FP_LABELS[formaPedido] : (fp ?? null);
-    const parceiroIdPedido = pedidoParceiroIdRef.current ?? parceiroSel?.id ?? null;
+    const fpSel = formaEscolhida ? FP_LABELS[formaEscolhida] : (fp ?? null);
 
-    if (formaPedido === "pix" && parceiroIdPedido) {
+    if (formaEscolhida === "pix" && parceiroSel) {
       return (
         <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }]}>
           <PixPagamento
-            empresaId={parceiroIdPedido}
+            empresaId={parceiroSel.id}
             pedidoId={pedidoId}
             modulo="food"
             colors={colors}
             onClose={() => {
-              pedidoFormaPagamentoRef.current = null;
-              pedidoParceiroIdRef.current = null;
               setPedidoFeito(false);
               setPedidoId(null);
               setParceiroSel(null);
@@ -576,7 +563,7 @@ export default function ClienteFood() {
                   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                     <View>
                       <Text style={[{ color: colors.textSecondary, fontFamily: "Inter_400Regular", fontSize: 14 }]}>Taxa de entrega</Text>
-                      {!!freteInfo?.distancia_km && (
+                      {freteInfo?.distancia_km && (
                         <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>
                           {freteInfo.distancia_km} km • {freteInfo.duracao ?? ""}
                         </Text>
