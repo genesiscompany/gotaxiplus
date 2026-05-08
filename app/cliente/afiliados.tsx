@@ -34,11 +34,13 @@ const GREEN_DARK = "#16A34A";
 const EMERALD = "#10B981";
 
 function fmt(v: number) {
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
 }
 
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString("pt-BR");
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "";
+  return `${dt.getDate().toString().padStart(2,"0")}/${(dt.getMonth()+1).toString().padStart(2,"0")}/${dt.getFullYear()}`;
 }
 
 function StatusBadge({ status }: { status: string }) {

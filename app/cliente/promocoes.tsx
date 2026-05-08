@@ -59,7 +59,11 @@ function PromoRow({ promo, isDark, colors }: { promo: Promocao; isDark: boolean;
     if (hasProduto) {
       router.push({
         pathname: "/cliente/food" as any,
-        params: { empresaId: String(promo.empresa_id), produtoId: String(promo.produto_id) },
+        params: {
+          empresaId: String(promo.empresa_id),
+          produtoId: String(promo.produto_id),
+          precoPromocional: promo.preco_promocional != null ? String(promo.preco_promocional) : "",
+        },
       });
     }
   };
@@ -151,7 +155,7 @@ function PromoRow({ promo, isDark, colors }: { promo: Promocao; isDark: boolean;
               <View style={[styles.chip, { backgroundColor: isDark ? "#0f172a" : "#f1f5f9" }]}>
                 <Feather name="calendar" size={11} color={colors.textSecondary} />
                 <Text style={[styles.chipText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                  Até {new Date(promo.validade + "T00:00:00").toLocaleDateString("pt-BR")}
+                  Até {(() => { const d = new Date(promo.validade + "T00:00:00"); return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`; })()}
                 </Text>
               </View>
             )}

@@ -40,7 +40,7 @@ type CustomerAuthContextType = {
   isLoaded: boolean;
   isLoggedIn: boolean;
   login: (whatsapp: string, senha: string) => Promise<{ ok: boolean; error?: string }>;
-  register: (nome: string, whatsapp: string, senha: string) => Promise<{ ok: boolean; error?: string }>;
+  register: (nome: string, whatsapp: string, senha: string, indicadoPor?: string) => Promise<{ ok: boolean; error?: string }>;
   updateProfile: (data: { nome?: string; whatsapp?: string; novaSenha?: string; endereco?: string; formaPagamento?: FormaPagamento }) => Promise<{ ok: boolean; error?: string }>;
   uploadAvatar: (uri: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;

@@ -42,6 +42,7 @@ export interface ProUser {
   pix_tipo?: string;
   pix_chave?: string;
   pix_imagem_url?: string;
+  codigo_referral?: string | null;
 }
 
 interface ProAuthContextType {

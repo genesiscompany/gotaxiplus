@@ -448,11 +448,16 @@ export default function ServicosScreen() {
   // UI helpers
   // ─────────────────────────────────────────────────────────────────────────
   const fmtMoeda = (v?: number | null) =>
-    v != null ? `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—";
+    v != null ? `R$ ${Number(v).toFixed(2).replace(".", ",")}` : "—";
   const fmtData = (iso?: string | null) => {
     if (!iso) return "—";
     const d = new Date(iso);
-    return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    if (isNaN(d.getTime())) return "—";
+    const dd = d.getDate().toString().padStart(2,"0");
+    const mm = (d.getMonth()+1).toString().padStart(2,"0");
+    const hh = d.getHours().toString().padStart(2,"0");
+    const min = d.getMinutes().toString().padStart(2,"0");
+    return `${dd}/${mm} ${hh}:${min}`;
   };
 
   // ─── Alerta de repasse ────────────────────────────────────────────────────
@@ -706,7 +711,7 @@ export default function ServicosScreen() {
                 </Text>
                 {(p.valido_de || p.valido_ate) && (
                   <Text style={[styles.itemMetaText, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
-                    {" · "}{p.valido_de ? new Date(p.valido_de).toLocaleDateString("pt-BR") : "—"} → {p.valido_ate ? new Date(p.valido_ate).toLocaleDateString("pt-BR") : "—"}
+                    {" · "}{p.valido_de ? fmtData(p.valido_de)?.slice(0,5) : "—"} → {p.valido_ate ? fmtData(p.valido_ate)?.slice(0,5) : "—"}
                   </Text>
                 )}
               </View>
@@ -957,7 +962,7 @@ export default function ServicosScreen() {
           <View key={i} style={[styles.repaseHistCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View>
               <Text style={[styles.repaseHistSem, { color: colors.text, fontFamily: "Inter_500Medium" }]}>
-                {new Date(r.semana_inicio).toLocaleDateString("pt-BR")} – {new Date(r.semana_fim).toLocaleDateString("pt-BR")}
+                {fmtData(r.semana_inicio)?.slice(0,5)} – {fmtData(r.semana_fim)?.slice(0,5)}
               </Text>
               <Text style={[styles.repaseHistSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
                 Receita: {fmtMoeda(r.receita_total)}

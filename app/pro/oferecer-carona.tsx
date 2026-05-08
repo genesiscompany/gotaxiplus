@@ -25,7 +25,7 @@ interface Carona {
   status: string;
 }
 
-const fmtBRL = (v: any) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const fmtBRL = (v: any) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
 
 function todayYMD() {
   const d = new Date(); d.setDate(d.getDate() + 1);

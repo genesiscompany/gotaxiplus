@@ -91,10 +91,15 @@ export default function ProInicio() {
 
   if (!proUser) return null;
 
-  const hojeB = Number(stats?.hoje || 0);
-  const hojeL = +(hojeB * meuPct / 100).toFixed(2);
+  const hojeB  = Number(stats?.hoje  || 0);
+  // Use server-calculated liquid (already respects food/PDV isenção). Fallback for old API.
+  const hojeL  = stats?.ganhos_hoje_liquido   != null
+    ? Number(stats.ganhos_hoje_liquido)
+    : +(hojeB * meuPct / 100).toFixed(2);
   const semanaB = Number(stats?.semana || 0);
-  const semanaL = +(semanaB * meuPct / 100).toFixed(2);
+  const semanaL = stats?.ganhos_semana_liquido != null
+    ? Number(stats.ganhos_semana_liquido)
+    : +(semanaB * meuPct / 100).toFixed(2);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -194,7 +199,7 @@ export default function ProInicio() {
             <View style={styles.bigDivider} />
             <View style={styles.bigItem}>
               <Text style={styles.bigItemLabel}>Repasse GoTaxi</Text>
-              <Text style={[styles.bigItemVal, { color: "#EF4444" }]}>-{fmtBRL(+(hojeB * repasse / 100).toFixed(2))}</Text>
+              <Text style={[styles.bigItemVal, { color: "#EF4444" }]}>-{fmtBRL(+(hojeB - hojeL).toFixed(2))}</Text>
             </View>
           </View>
         </View>

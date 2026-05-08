@@ -137,6 +137,12 @@ const server = http.createServer((req, res) => {
     return res.end(pdvTemplate);
   }
 
+  // Health check for Cloud Run / deployment probe
+  if (pathname === "/status") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
   if (pathname === "/" || pathname === "/manifest") {
     const platform = req.headers["expo-platform"];
     if (platform === "ios" || platform === "android") {

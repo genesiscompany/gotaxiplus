@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
-  useColorScheme, Platform, ActivityIndicator, Alert, Image, Modal,
+  useColorScheme, Platform, ActivityIndicator, Alert, Image, Modal, TextInput,
 } from "react-native";
+import PixPagamento from "@/components/PixPagamento";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -44,28 +45,45 @@ function ProductImage({ uri, style, fallbackIcon = "coffee", fallbackColor = "#8
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+type Subcategoria = { id: number; nome: string; slug: string; emoji: string | null };
+
 type Parceiro = {
   id: number;
   nome: string;
   cor: string | null;
   total_produtos: number;
+  subcategoria_id: number | null;
+  subcategoria_nome: string | null;
+  subcategoria_slug: string | null;
+  subcategoria_emoji: string | null;
 };
 
 type Categoria = { id: number; nome: string; ordem: number };
-type Extra = { id: number; nome: string; preco: number };
+type Extra = { id: number; nome: string; preco: number; obrigatorio?: boolean };
 type Tamanho = { nome: string; preco: number };
+type OpcaoGrupo = { id: number; nome: string; preco_adicional: number };
+type Grupo = {
+  id: number; nome: string;
+  min_selecoes: number; max_selecoes: number;
+  obrigatorio: boolean;
+  opcoes: OpcaoGrupo[];
+};
 type Produto = {
   id: number; nome: string; descricao?: string; preco: number;
+  preco_promocional?: number | null;
   imagem?: string; categoria_id?: number; categoria_nome?: string;
   extras: Extra[];
+  grupos?: Grupo[];
   tamanhos?: Tamanho[] | null;
 };
 
 type Cardapio = { categorias: Categoria[]; produtos: Produto[]; formasPagamento: string[] };
-type CartItem = { uid: string; produto: Produto; qtd: number; extrasSel: Extra[]; tamanhoSel: Tamanho | null; precoUnitario: number };
+type CartItem = { uid: string; produto: Produto; qtd: number; extrasSel: Extra[]; gruposSel: Record<number, OpcaoGrupo[]>; tamanhoSel: Tamanho | null; precoUnitario: number };
 
-const makeUid = (produtoId: number, tamanhoNome: string, extraIds: number[]) =>
-  `${produtoId}_t:${tamanhoNome}_${[...extraIds].sort((a, b) => a - b).join("_")}`;
+const makeUid = (produtoId: number, tamanhoNome: string, extraIds: number[], gruposSel: Record<number, OpcaoGrupo[]>) => {
+  const grupoStr = Object.entries(gruposSel).sort(([a],[b]) => Number(a)-Number(b)).map(([gid, ops]) => `g${gid}:[${ops.map(o=>o.id).sort((a,b)=>a-b).join(",")}]`).join("_");
+  return `${produtoId}_t:${tamanhoNome}_${[...extraIds].sort((a, b) => a - b).join("_")}_${grupoStr}`;
+};
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function ClienteFood() {
@@ -82,6 +100,15 @@ export default function ClienteFood() {
   // ── List screen state ──────────────────────────────────────────────────────
   const [parceiros, setParceiros] = useState<Parceiro[]>([]);
   const [loadingParceiros, setLoadingParceiros] = useState(true);
+  const [subcategorias, setSubcategorias] = useState<Subcategoria[]>([]);
+  const [subcategoriaFiltro, setSubcategoriaFiltro] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/subcategorias-alimentacao`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setSubcategorias(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, []);
 
   // ── Detail screen state ────────────────────────────────────────────────────
   const [parceiroSel, setParceiroSel] = useState<Parceiro | null>(null);
@@ -106,16 +133,105 @@ export default function ClienteFood() {
   const [carrinho, setCarrinho] = useState<CartItem[]>([]);
   const [showCarrinho, setShowCarrinho] = useState(false);
   const [pedidoFeito, setPedidoFeito] = useState(false);
+  const [pedidoId, setPedidoId] = useState<number | null>(null);
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [formaEscolhida, setFormaEscolhida] = useState<string | null>(null);
   const [formasPagamento, setFormasPagamento] = useState<string[]>([]);
+  // Captura a forma de pagamento e parceiro no momento exato do pedido,
+  // evitando race conditions com o estado formaEscolhida em producao (New Arch)
+  const pedidoFormaPagamentoRef = React.useRef<string | null>(null);
+  const pedidoParceiroIdRef = React.useRef<number | null>(null);
   const [modalProduto, setModalProduto] = useState<Produto | null>(null);
+  const [tipoEntrega, setTipoEntrega] = useState<"delivery" | "retirar">("delivery");
+  const [horarioRetirada, setHorarioRetirada] = useState("");
 
   const totalCarrinho = carrinho.reduce((s, c) => s + c.precoUnitario * c.qtd, 0);
   const qtdCarrinho = carrinho.reduce((s, c) => s + c.qtd, 0);
 
+  // ── Delivery fee + address autocomplete state ────────────────────────────────
+  type ConfigEntrega = { tipo: string; taxa_fixa: number; taxa_por_km: number; km_minimo: number; taxa_minima: number; raio_max_km: number | null; ativo: boolean };
+  type PlaceSuggestion = { place_id: string; description: string; main_text: string; secondary_text: string };
+
+  const [configEntrega, setConfigEntrega] = useState<ConfigEntrega | null>(null);
+  const [enderecoEntrega, setEnderecoEntrega] = useState("");
+  const [taxaCalculada, setTaxaCalculada] = useState<number | null>(null);
+  const [calculandoFrete, setCalculandoFrete] = useState(false);
+  const [freteInfo, setFreteInfo] = useState<{ distancia_km?: number; duracao?: string; fora_raio?: boolean; mensagem?: string } | null>(null);
+
+  // Autocomplete
+  const [inputBusca, setInputBusca] = useState("");
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [placeSel, setPlaceSel] = useState<PlaceSuggestion | null>(null);
+  const [numero, setNumero] = useState("");
+  const [complemento, setComplemento] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessiontoken = useRef(Math.random().toString(36).slice(2));
+
+  const buscarSugestoes = (text: string) => {
+    setInputBusca(text);
+    setPlaceSel(null);
+    setNumero("");
+    setComplemento("");
+    setTaxaCalculada(null);
+    setFreteInfo(null);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (text.length < 3) { setSuggestions([]); setShowSuggestions(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API_BASE}/food/places/autocomplete?input=${encodeURIComponent(text)}&sessiontoken=${sessiontoken.current}`);
+        const data = await r.json();
+        setSuggestions(Array.isArray(data) ? data : []);
+        setShowSuggestions(true);
+      } catch { setSuggestions([]); }
+    }, 350);
+  };
+
+  const selecionarPlace = (place: PlaceSuggestion) => {
+    setPlaceSel(place);
+    setInputBusca(place.main_text);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    sessiontoken.current = Math.random().toString(36).slice(2);
+  };
+
+  const enderecoFinal = placeSel
+    ? [placeSel.description.replace(/,\s*\d{5}-?\d{3}.*$/, "").trim(), numero, complemento].filter(Boolean).join(", ")
+    : enderecoEntrega;
+
+  const calcularFrete = async (empresaId: number, endereco: string) => {
+    if (!endereco.trim() || endereco.trim().length < 8) return;
+    setCalculandoFrete(true);
+    setFreteInfo(null);
+    try {
+      const r = await fetch(`${API_BASE}/food/empresa/${empresaId}/calcular-frete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endereco_destino: endereco }),
+      });
+      const data = await r.json();
+      if (data.fora_raio) {
+        setTaxaCalculada(null);
+        setFreteInfo({ fora_raio: true, distancia_km: data.distancia_km, mensagem: data.mensagem });
+      } else if (data.taxa_entrega !== null && data.taxa_entrega !== undefined) {
+        setTaxaCalculada(Number(data.taxa_entrega));
+        setFreteInfo({ distancia_km: data.distancia_km, duracao: data.duracao });
+      }
+    } catch { /* silent */ }
+    setCalculandoFrete(false);
+  };
+
+  // Trigger fee calc when place + number are set (for km config)
+  useEffect(() => {
+    if (placeSel && numero && configEntrega?.tipo === "km" && parceiroSel) {
+      calcularFrete(parceiroSel.id, enderecoFinal);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeSel, numero]);
+
   // ── Fetch partners ──────────────────────────────────────────────────────────
-  const { empresaId: empresaIdParam, produtoId: produtoIdParam } = useLocalSearchParams<{ empresaId?: string; produtoId?: string }>();
+  const { empresaId: empresaIdParam, produtoId: produtoIdParam, precoPromocional: precoPromocionalParam } = useLocalSearchParams<{ empresaId?: string; produtoId?: string; precoPromocional?: string }>();
+  const [modalPrecoPromo, setModalPrecoPromo] = useState<number | null>(null);
 
   useEffect(() => {
     fetch(`${API_BASE}/food/parceiros`)
@@ -152,7 +268,24 @@ export default function ClienteFood() {
     setCardapio(null);
     setFormaEscolhida(null);
     setFormasPagamento([]);
+    setTipoEntrega("delivery");
+    setHorarioRetirada("");
+    setEnderecoEntrega("");
+    setTaxaCalculada(null);
+    setFreteInfo(null);
+    setConfigEntrega(null);
+    setInputBusca("");
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setPlaceSel(null);
+    setNumero("");
+    setComplemento("");
     setLoadingCardapio(true);
+    // Fetch delivery config in background
+    fetch(`${API_BASE}/food/empresa/${p.id}/config-entrega`)
+      .then(r => r.ok ? r.json() : null)
+      .then(cfg => { if (cfg) setConfigEntrega(cfg); })
+      .catch(() => {});
     try {
       const res = await fetch(`${API_BASE}/food/parceiros/${p.id}/cardapio`);
       const data = await res.json();
@@ -181,26 +314,34 @@ export default function ClienteFood() {
     if (!produtoIdParam || !cardapio?.produtos?.length) return;
     const target = cardapio.produtos.find(p => String(p.id) === String(produtoIdParam));
     if (target) {
+      const promoPrice = precoPromocionalParam && !isNaN(Number(precoPromocionalParam)) && Number(precoPromocionalParam) > 0
+        ? Number(precoPromocionalParam)
+        : null;
+      setModalPrecoPromo(promoPrice);
       setModalProduto(target);
       autoOpenedRef.current = true;
     }
-  }, [produtoIdParam, cardapio]);
+  }, [produtoIdParam, cardapio, precoPromocionalParam]);
 
   // ── Cart helpers ────────────────────────────────────────────────────────────
-  const addToCart = (produto: Produto, tamanhoSel: Tamanho | null, extrasSel: Extra[], qtdAdded: number) => {
-    const uid = makeUid(produto.id, tamanhoSel?.nome ?? "", extrasSel.map(e => e.id));
-    const basePreco = tamanhoSel ? Number(tamanhoSel.preco) : Number(produto.preco);
-    const precoUnitario = basePreco + extrasSel.reduce((s, e) => s + Number(e.preco), 0);
+  const addToCart = (produto: Produto, tamanhoSel: Tamanho | null, extrasSel: Extra[], qtdAdded: number, precoPromoOverride?: number | null, gruposSel?: Record<number, OpcaoGrupo[]>) => {
+    const gs = gruposSel ?? {};
+    const uid = makeUid(produto.id, tamanhoSel?.nome ?? "", extrasSel.map(e => e.id), gs);
+    const basePreco = tamanhoSel ? Number(tamanhoSel.preco) : (precoPromoOverride != null ? precoPromoOverride : Number(produto.preco));
+    const extrasTotal = extrasSel.reduce((s, e) => s + Number(e.preco), 0);
+    const gruposTotal = Object.values(gs).flat().reduce((s, o) => s + Number(o.preco_adicional), 0);
+    const precoUnitario = basePreco + extrasTotal + gruposTotal;
     setCarrinho(prev => {
       const ex = prev.find(c => c.uid === uid);
       if (ex) return prev.map(c => c.uid === uid ? { ...c, qtd: c.qtd + qtdAdded } : c);
-      return [...prev, { uid, produto, qtd: qtdAdded, extrasSel, tamanhoSel, precoUnitario }];
+      return [...prev, { uid, produto, qtd: qtdAdded, extrasSel, gruposSel: gs, tamanhoSel, precoUnitario }];
     });
   };
 
   const removeItem = (uid: string) => {
     setCarrinho(prev => prev.map(c => c.uid === uid ? { ...c, qtd: c.qtd - 1 } : c).filter(c => c.qtd > 0));
   };
+  const addItemAgain = (c: CartItem) => addToCart(c.produto, c.tamanhoSel, c.extrasSel, 1, null, c.gruposSel);
 
   const getQtd = (produtoId: number) =>
     carrinho.filter(c => c.produto.id === produtoId).reduce((s, c) => s + c.qtd, 0);
@@ -209,8 +350,14 @@ export default function ClienteFood() {
     if (!formaEscolhida || !parceiroSel) return;
     setEnviandoPedido(true);
     try {
-      const taxaEntrega = Number((parceiroSel as any).taxa_entrega ?? 0);
+      const taxaEntrega = tipoEntrega === "delivery" ? (taxaCalculada ?? 0) : 0;
       const totalPedido = totalCarrinho + taxaEntrega;
+
+      if (tipoEntrega === "delivery" && freteInfo?.fora_raio) {
+        Alert.alert("Fora do raio", freteInfo.mensagem ?? "Seu endereço está fora do raio de entrega.");
+        setEnviandoPedido(false);
+        return;
+      }
 
       if (formaEscolhida === "credito_gotaxi" && creditoDisponivel < totalPedido) {
         Alert.alert(
@@ -241,8 +388,10 @@ export default function ClienteFood() {
           forma_pagamento: formaEscolhida,
           cliente_nome: customer?.nome ?? "Cliente App",
           cliente_whatsapp: customer?.whatsapp ?? "",
-          cliente_endereco: (customer as any)?.endereco ?? "",
+          cliente_endereco: enderecoFinal || (customer as any)?.endereco || "",
           taxa_entrega: taxaEntrega,
+          tipo_entrega: tipoEntrega,
+          horario_retirada: tipoEntrega === "retirar" ? (horarioRetirada || "A combinar") : null,
         }),
       });
       if (!r.ok) {
@@ -250,17 +399,26 @@ export default function ClienteFood() {
         Alert.alert("Erro ao enviar pedido", err.message || "Tente novamente.");
         return;
       }
+      const resData = await r.json().catch(() => ({}));
+      setPedidoId(resData.id ?? null);
       if (formaEscolhida === "credito_gotaxi") {
         setCreditoDisponivel(prev => Math.max(0, prev - totalPedido));
       }
+      // Captura forma e parceiro ANTES do setPedidoFeito para evitar race condition
+      pedidoFormaPagamentoRef.current = formaEscolhida;
+      pedidoParceiroIdRef.current = parceiroSel?.id ?? null;
       setPedidoFeito(true);
       setCarrinho([]);
-      setTimeout(() => {
-        setPedidoFeito(false);
-        setParceiroSel(null);
-        setCardapio(null);
-        setFormaEscolhida(null);
-      }, 3500);
+      if (formaEscolhida !== "pix") {
+        setTimeout(() => {
+          setPedidoFeito(false);
+          setParceiroSel(null);
+          setCardapio(null);
+          setFormaEscolhida(null);
+          pedidoFormaPagamentoRef.current = null;
+          pedidoParceiroIdRef.current = null;
+        }, 3500);
+      }
     } catch {
       Alert.alert("Falha de conexão", "Verifique sua internet e tente novamente.");
     } finally {
@@ -272,7 +430,32 @@ export default function ClienteFood() {
 
   // ── Success screen ──────────────────────────────────────────────────────────
   if (pedidoFeito) {
-    const fpSel = formaEscolhida ? FP_LABELS[formaEscolhida] : (fp ?? null);
+    const formaPedido = pedidoFormaPagamentoRef.current ?? formaEscolhida;
+    const fpSel = formaPedido ? FP_LABELS[formaPedido] : (fp ?? null);
+    const parceiroIdPedido = pedidoParceiroIdRef.current ?? parceiroSel?.id ?? null;
+
+    if (formaPedido === "pix" && parceiroIdPedido) {
+      return (
+        <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }]}>
+          <PixPagamento
+            empresaId={parceiroIdPedido}
+            pedidoId={pedidoId}
+            modulo="food"
+            colors={colors}
+            onClose={() => {
+              pedidoFormaPagamentoRef.current = null;
+              pedidoParceiroIdRef.current = null;
+              setPedidoFeito(false);
+              setPedidoId(null);
+              setParceiroSel(null);
+              setCardapio(null);
+              setFormaEscolhida(null);
+            }}
+          />
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
         <View style={[styles.sucessoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -298,7 +481,7 @@ export default function ClienteFood() {
 
   // ── Detail screen (catalog of selected partner) ─────────────────────────────
   if (parceiroSel) {
-    const produtosFiltrados = cardapio?.produtos.filter(p =>
+    const produtosFiltrados = cardapio?.produtos?.filter(p =>
       categoriaSel === null || p.categoria_id === categoriaSel
     ) ?? [];
 
@@ -308,6 +491,9 @@ export default function ClienteFood() {
         ativo={showCarrinho ? "carrinho" : "inicio"}
         corAtivo={accentColor}
         qtdCarrinho={qtdCarrinho}
+        empresaId={parceiroSel?.id ?? null}
+        empresaNome={parceiroSel?.nome ?? null}
+        clienteNome={customer?.nome ?? null}
         onInicio={() => { setShowCarrinho(false); if (!parceiroSel) return; }}
         onCarrinho={() => { if (qtdCarrinho > 0) setShowCarrinho(true); }}
         onFinalizar={() => {
@@ -353,6 +539,11 @@ export default function ClienteFood() {
                       + {c.extrasSel.map(e => e.nome).join(", ")}
                     </Text>
                   )}
+                  {Object.values(c.gruposSel ?? {}).flat().length > 0 && (
+                    <Text style={[styles.itemExtras, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]} numberOfLines={3}>
+                      {Object.entries(c.gruposSel ?? {}).map(([, ops]) => ops.map(o => o.nome).join(", ")).filter(Boolean).join(" · ")}
+                    </Text>
+                  )}
                   <Text style={[styles.itemPreco, { color: accentColor, fontFamily: "Inter_700Bold" }]}>
                     R$ {(c.precoUnitario * c.qtd).toFixed(2)}
                   </Text>
@@ -362,17 +553,230 @@ export default function ClienteFood() {
                     <Feather name="minus" size={14} color={colors.text} />
                   </Pressable>
                   <Text style={[styles.qtdNum, { color: colors.text, fontFamily: "Inter_700Bold" }]}>{c.qtd}</Text>
-                  <Pressable onPress={() => addToCart(c.produto, c.tamanhoSel, c.extrasSel, 1)} style={[styles.qtdBtn, { backgroundColor: accentColor }]}>
+                  <Pressable onPress={() => addItemAgain(c)} style={[styles.qtdBtn, { backgroundColor: accentColor }]}>
                     <Feather name="plus" size={14} color="#fff" />
                   </Pressable>
                 </View>
               </View>
             ))}
 
-            {/* Total */}
-            <View style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 0 }]}>
-              <Text style={[{ color: colors.text, fontFamily: "Inter_700Bold", fontSize: 16 }]}>Total</Text>
-              <Text style={[{ color: accentColor, fontFamily: "Inter_700Bold", fontSize: 22, marginLeft: "auto" }]}>R$ {totalCarrinho.toFixed(2)}</Text>
+            {/* ── Subtotal / Taxa / Total ──────────────────────────────── */}
+            {(() => {
+              const taxaEntrega = tipoEntrega === "retirar" ? 0 : (taxaCalculada ?? 0);
+              const totalFinal = totalCarrinho + taxaEntrega;
+              const isFixa = configEntrega?.tipo === "fixa";
+              const isKm = configEntrega?.tipo === "km";
+              const semEnderecoKm = isKm && tipoEntrega === "delivery" && taxaCalculada === null && !freteInfo?.fora_raio;
+              return (
+                <View style={[{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 14, padding: 16, gap: 8 }]}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={[{ color: colors.textSecondary, fontFamily: "Inter_400Regular", fontSize: 14 }]}>Subtotal</Text>
+                    <Text style={[{ color: colors.text, fontFamily: "Inter_600SemiBold", fontSize: 14 }]}>R$ {totalCarrinho.toFixed(2)}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <View>
+                      <Text style={[{ color: colors.textSecondary, fontFamily: "Inter_400Regular", fontSize: 14 }]}>Taxa de entrega</Text>
+                      {!!freteInfo?.distancia_km && (
+                        <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>
+                          {freteInfo.distancia_km} km • {freteInfo.duracao ?? ""}
+                        </Text>
+                      )}
+                    </View>
+                    {tipoEntrega === "retirar" ? (
+                      <Text style={[{ color: "#10B981", fontFamily: "Inter_600SemiBold", fontSize: 14 }]}>Grátis</Text>
+                    ) : calculandoFrete ? (
+                      <ActivityIndicator size="small" color={accentColor} />
+                    ) : freteInfo?.fora_raio ? (
+                      <Text style={[{ color: "#EF4444", fontFamily: "Inter_600SemiBold", fontSize: 13 }]}>Fora do raio</Text>
+                    ) : semEnderecoKm ? (
+                      <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 12 }]}>informe o endereço</Text>
+                    ) : isFixa && (configEntrega?.taxa_fixa ?? 0) === 0 ? (
+                      <Text style={[{ color: "#10B981", fontFamily: "Inter_600SemiBold", fontSize: 14 }]}>Grátis</Text>
+                    ) : (
+                      <Text style={[{ color: taxaEntrega > 0 ? colors.text : "#10B981", fontFamily: "Inter_600SemiBold", fontSize: 14 }]}>
+                        {taxaEntrega > 0 ? `R$ ${taxaEntrega.toFixed(2)}` : "Grátis"}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 2 }} />
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={[{ color: colors.text, fontFamily: "Inter_700Bold", fontSize: 16 }]}>Total</Text>
+                    <Text style={[{ color: accentColor, fontFamily: "Inter_700Bold", fontSize: 22 }]}>
+                      {semEnderecoKm || freteInfo?.fora_raio ? `R$ ${totalCarrinho.toFixed(2)}+` : `R$ ${totalFinal.toFixed(2)}`}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
+
+            {/* ── Tipo de entrega ──────────────────────────────────────── */}
+            <View style={{ gap: 10 }}>
+              <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: "Inter_700Bold", fontSize: 15 }]}>
+                Tipo de entrega
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable
+                  onPress={() => setTipoEntrega("delivery")}
+                  style={[{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 12, borderWidth: 2,
+                    borderColor: tipoEntrega === "delivery" ? accentColor : colors.border,
+                    backgroundColor: tipoEntrega === "delivery" ? accentColor + "15" : colors.card }]}>
+                  <Feather name="truck" size={20} color={tipoEntrega === "delivery" ? accentColor : colors.textMuted} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[{ color: colors.text, fontFamily: tipoEntrega === "delivery" ? "Inter_700Bold" : "Inter_500Medium", fontSize: 14 }]}>Delivery</Text>
+                    <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>
+                      {(parceiroSel as any)?.tempo_entrega_min ?? 30} min
+                    </Text>
+                  </View>
+                  {tipoEntrega === "delivery" && <Feather name="check-circle" size={18} color={accentColor} />}
+                </Pressable>
+                <Pressable
+                  onPress={() => setTipoEntrega("retirar")}
+                  style={[{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 12, borderWidth: 2,
+                    borderColor: tipoEntrega === "retirar" ? accentColor : colors.border,
+                    backgroundColor: tipoEntrega === "retirar" ? accentColor + "15" : colors.card }]}>
+                  <Feather name="shopping-bag" size={20} color={tipoEntrega === "retirar" ? accentColor : colors.textMuted} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[{ color: colors.text, fontFamily: tipoEntrega === "retirar" ? "Inter_700Bold" : "Inter_500Medium", fontSize: 14 }]}>Retirar</Text>
+                    <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>Na loja</Text>
+                  </View>
+                  {tipoEntrega === "retirar" && <Feather name="check-circle" size={18} color={accentColor} />}
+                </Pressable>
+              </View>
+              {tipoEntrega === "delivery" && configEntrega && (
+                <View style={{ gap: 6 }}>
+                  <Text style={[{ color: colors.text, fontFamily: "Inter_600SemiBold", fontSize: 13 }]}>
+                    Endereço de entrega
+                  </Text>
+
+                  {/* ── Selected place card ─────────────────────── */}
+                  {placeSel ? (
+                    <View style={{ gap: 8 }}>
+                      <View style={[{ backgroundColor: accentColor + "12", borderWidth: 1.5, borderColor: accentColor, borderRadius: 10, padding: 12, flexDirection: "row", alignItems: "flex-start", gap: 8 }]}>
+                        <Feather name="map-pin" size={16} color={accentColor} style={{ marginTop: 2 }} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[{ color: colors.text, fontFamily: "Inter_600SemiBold", fontSize: 13 }]}>{placeSel.main_text}</Text>
+                          {placeSel.secondary_text ? (
+                            <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>{placeSel.secondary_text}</Text>
+                          ) : null}
+                        </View>
+                        <Pressable onPress={() => { setPlaceSel(null); setInputBusca(""); setNumero(""); setComplemento(""); setTaxaCalculada(null); setFreteInfo(null); }}>
+                          <Feather name="x" size={16} color={colors.textMuted} />
+                        </Pressable>
+                      </View>
+                      {/* Número + Complemento */}
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <TextInput
+                          style={[{ flex: 1, backgroundColor: colors.card, borderWidth: 1.5, borderColor: numero ? accentColor : colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontFamily: "Inter_400Regular", fontSize: 14 }]}
+                          placeholder="Número"
+                          placeholderTextColor={colors.textMuted}
+                          value={numero}
+                          onChangeText={setNumero}
+                          keyboardType="numeric"
+                          returnKeyType="next"
+                        />
+                        <TextInput
+                          style={[{ flex: 2, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontFamily: "Inter_400Regular", fontSize: 14 }]}
+                          placeholder="Complemento (apto, bloco...)"
+                          placeholderTextColor={colors.textMuted}
+                          value={complemento}
+                          onChangeText={setComplemento}
+                          returnKeyType="done"
+                        />
+                      </View>
+                      {/* Fee feedback */}
+                      {configEntrega.tipo === "km" && (
+                        calculandoFrete ? (
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                            <ActivityIndicator size="small" color={accentColor} />
+                            <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 12 }]}>Calculando frete...</Text>
+                          </View>
+                        ) : freteInfo?.fora_raio ? (
+                          <Text style={[{ color: "#EF4444", fontFamily: "Inter_400Regular", fontSize: 12 }]}>⚠ {freteInfo.mensagem ?? "Fora do raio de entrega"}</Text>
+                        ) : freteInfo?.distancia_km ? (
+                          <Text style={[{ color: "#10B981", fontFamily: "Inter_400Regular", fontSize: 12 }]}>✓ {freteInfo.distancia_km} km • frete R$ {taxaCalculada?.toFixed(2)}</Text>
+                        ) : numero ? (
+                          <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>Taxa mínima: R$ {configEntrega.taxa_minima.toFixed(2)}</Text>
+                        ) : (
+                          <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>Informe o número para calcular o frete</Text>
+                        )
+                      )}
+                    </View>
+                  ) : (
+                    /* ── Search input + suggestions ──────────────── */
+                    <View>
+                      <View style={{ position: "relative" }}>
+                        <Feather name="search" size={16} color={colors.textMuted} style={{ position: "absolute", left: 12, top: 13, zIndex: 1 }} />
+                        <TextInput
+                          style={[{
+                            backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border,
+                            borderRadius: showSuggestions && suggestions.length > 0 ? 10 : 10,
+                            paddingHorizontal: 14, paddingLeft: 36, paddingVertical: 11,
+                            color: colors.text, fontFamily: "Inter_400Regular", fontSize: 14,
+                          }]}
+                          placeholder="Buscar rua, avenida..."
+                          placeholderTextColor={colors.textMuted}
+                          value={inputBusca}
+                          onChangeText={buscarSugestoes}
+                          returnKeyType="search"
+                          autoCorrect={false}
+                        />
+                      </View>
+                      {showSuggestions && suggestions.length > 0 && (
+                        <View style={[{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 10, marginTop: 4, overflow: "hidden" }]}>
+                          {suggestions.slice(0, 5).map((s, i) => (
+                            <Pressable
+                              key={s.place_id}
+                              onPress={() => selecionarPlace(s)}
+                              style={[{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: colors.border }]}
+                            >
+                              <Feather name="map-pin" size={14} color={accentColor} style={{ marginTop: 2 }} />
+                              <View style={{ flex: 1 }}>
+                                <Text style={[{ color: colors.text, fontFamily: "Inter_500Medium", fontSize: 13 }]} numberOfLines={1}>{s.main_text}</Text>
+                                {s.secondary_text ? (
+                                  <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]} numberOfLines={1}>{s.secondary_text}</Text>
+                                ) : null}
+                              </View>
+                            </Pressable>
+                          ))}
+                        </View>
+                      )}
+                      {inputBusca.length >= 3 && suggestions.length === 0 && !showSuggestions && (
+                        <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 6 }]}>
+                          Nenhuma sugestão encontrada. Tente um endereço mais completo.
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
+              {tipoEntrega === "retirar" && (
+                <View style={{ gap: 8 }}>
+                  <Text style={[{ color: colors.text, fontFamily: "Inter_600SemiBold", fontSize: 13 }]}>Horário de retirada</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {["Agora", "15 min", "30 min", "1 hora"].map(opt => (
+                      <Pressable key={opt} onPress={() => setHorarioRetirada(opt)}
+                        style={[{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
+                          borderColor: horarioRetirada === opt ? accentColor : colors.border,
+                          backgroundColor: horarioRetirada === opt ? accentColor + "18" : colors.backgroundSecondary }]}>
+                        <Text style={[{ color: horarioRetirada === opt ? accentColor : colors.text,
+                          fontFamily: horarioRetirada === opt ? "Inter_600SemiBold" : "Inter_400Regular", fontSize: 13 }]}>{opt}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <TextInput
+                    style={[{ backgroundColor: colors.card, borderWidth: 1.5,
+                      borderColor: horarioRetirada && !["Agora", "15 min", "30 min", "1 hora"].includes(horarioRetirada) ? accentColor : colors.border,
+                      borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
+                      color: colors.text, fontFamily: "Inter_400Regular", fontSize: 14 }]}
+                    placeholder="Ou digite o horário: ex. 14:30"
+                    placeholderTextColor={colors.textMuted}
+                    value={["Agora", "15 min", "30 min", "1 hora"].includes(horarioRetirada) ? "" : horarioRetirada}
+                    onChangeText={v => setHorarioRetirada(v)}
+                    keyboardType="numbers-and-punctuation"
+                    maxLength={5}
+                  />
+                </View>
+              )}
             </View>
 
             {/* ── Payment method selector ──────────────────────────────── */}
@@ -467,7 +871,7 @@ export default function ClienteFood() {
         ) : (
           <View style={{ flex: 1 }}>
             {/* Category filter */}
-            {(cardapio?.categorias.length ?? 0) > 0 && (
+            {(cardapio?.categorias?.length ?? 0) > 0 && (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -486,7 +890,7 @@ export default function ClienteFood() {
                     fontFamily: "Inter_600SemiBold",
                   }]}>Todos</Text>
                 </Pressable>
-                {cardapio?.categorias.map(cat => (
+                {cardapio?.categorias?.map(cat => (
                   <Pressable
                     key={cat.id}
                     onPress={() => setCategoriaSel(cat.id)}
@@ -524,9 +928,10 @@ export default function ClienteFood() {
                     <Pressable
                       key={produto.id}
                       onPress={() => {
-                        const hasOptions = (produto.extras?.length ?? 0) > 0 || (Array.isArray(produto.tamanhos) && produto.tamanhos.length > 0);
-                        if (hasOptions) setModalProduto(produto);
-                        else addToCart(produto, null, [], 1);
+                        const hasOptions = (produto.extras?.length ?? 0) > 0 || (Array.isArray(produto.tamanhos) && produto.tamanhos.length > 0) || (produto.grupos?.length ?? 0) > 0;
+                        const promoPrice = (produto.preco_promocional != null && Number(produto.preco_promocional) > 0) ? Number(produto.preco_promocional) : null;
+                        if (hasOptions) { setModalPrecoPromo(promoPrice); setModalProduto(produto); }
+                        else addToCart(produto, null, [], 1, promoPrice, {});
                       }}
                       style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                     >
@@ -550,9 +955,20 @@ export default function ClienteFood() {
                             {produto.extras.length} opç{produto.extras.length === 1 ? "ão" : "ões"} disponíve{produto.extras.length === 1 ? "l" : "is"}
                           </Text>
                         )}
-                        <Text style={[styles.itemPreco, { color: accentColor, fontFamily: "Inter_700Bold" }]}>
-                          R$ {Number(produto.preco).toFixed(2)}
-                        </Text>
+                        {produto.preco_promocional != null && Number(produto.preco_promocional) > 0 ? (
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <Text style={[styles.itemPreco, { color: accentColor, fontFamily: "Inter_700Bold" }]}>
+                              R$ {Number(produto.preco_promocional).toFixed(2)}
+                            </Text>
+                            <Text style={{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 12, textDecorationLine: "line-through" }}>
+                              R$ {Number(produto.preco).toFixed(2)}
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={[styles.itemPreco, { color: accentColor, fontFamily: "Inter_700Bold" }]}>
+                            R$ {Number(produto.preco).toFixed(2)}
+                          </Text>
+                        )}
                       </View>
                       {/* Product image */}
                       <View style={styles.itemImagemCol}>
@@ -588,8 +1004,13 @@ export default function ClienteFood() {
             accentColor={accentColor}
             colors={colors}
             insets={insets}
-            onClose={() => setModalProduto(null)}
-            onAdd={(tamanho, extras, qtd) => { addToCart(modalProduto, tamanho, extras, qtd); setModalProduto(null); }}
+            precoPromocional={modalPrecoPromo}
+            onClose={() => { setModalProduto(null); setModalPrecoPromo(null); }}
+            onAdd={(tamanho, extras, qtd, precoPromo, gruposSel) => {
+              addToCart(modalProduto, tamanho, extras, qtd, precoPromo, gruposSel);
+              setModalProduto(null);
+              setModalPrecoPromo(null);
+            }}
           />
         )}
         {navComum}
@@ -598,6 +1019,10 @@ export default function ClienteFood() {
   }
 
   // ── List screen (partner selection) ─────────────────────────────────────────
+  const parceirosFiltrados = subcategoriaFiltro === null
+    ? parceiros
+    : parceiros.filter(p => Number(p.subcategoria_id) === subcategoriaFiltro);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: topPadding + 16, backgroundColor: MOD_COLOR }]}>
@@ -608,6 +1033,50 @@ export default function ClienteFood() {
         <View style={{ width: 30 }} />
       </View>
 
+      {/* Subcategoria filter chips */}
+      {subcategorias.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0, flexShrink: 0, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 10, gap: 8, alignItems: "center" }}
+        >
+          <Pressable
+            onPress={() => setSubcategoriaFiltro(null)}
+            style={[styles.catChip, {
+              backgroundColor: subcategoriaFiltro === null ? MOD_COLOR : colors.backgroundSecondary,
+              borderColor: subcategoriaFiltro === null ? MOD_COLOR : colors.textMuted,
+            }]}
+          >
+            <Text style={[styles.catText, {
+              color: subcategoriaFiltro === null ? "#fff" : colors.text,
+              fontFamily: subcategoriaFiltro === null ? "Inter_600SemiBold" : "Inter_400Regular",
+            }]}>Todos</Text>
+          </Pressable>
+          {subcategorias.map(sub => {
+            const sel = subcategoriaFiltro === sub.id;
+            return (
+              <Pressable
+                key={sub.id}
+                onPress={() => setSubcategoriaFiltro(sel ? null : sub.id)}
+                style={[styles.catChip, {
+                  backgroundColor: sel ? MOD_COLOR : colors.backgroundSecondary,
+                  borderColor: sel ? MOD_COLOR : colors.textMuted,
+                }]}
+              >
+                {sub.emoji ? (
+                  <Text style={{ fontSize: 14 }}>{sub.emoji}</Text>
+                ) : null}
+                <Text style={[styles.catText, {
+                  color: sel ? "#fff" : colors.text,
+                  fontFamily: sel ? "Inter_600SemiBold" : "Inter_400Regular",
+                }]}>{sub.nome}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+
       {loadingParceiros ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12 }}>
           <ActivityIndicator size="large" color={MOD_COLOR} />
@@ -615,14 +1084,14 @@ export default function ClienteFood() {
             Buscando restaurantes...
           </Text>
         </View>
-      ) : parceiros.length === 0 ? (
+      ) : parceirosFiltrados.length === 0 ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 32 }}>
           <Feather name="coffee" size={48} color={colors.textMuted} />
           <Text style={[{ color: colors.text, fontFamily: "Inter_700Bold", fontSize: 18, textAlign: "center" }]}>
-            Nenhum restaurante disponível
+            {subcategoriaFiltro ? "Nenhum restaurante nesta categoria" : "Nenhum restaurante disponível"}
           </Text>
           <Text style={[{ color: colors.textSecondary, fontFamily: "Inter_400Regular", fontSize: 14, textAlign: "center" }]}>
-            Em breve novos parceiros na sua área!
+            {subcategoriaFiltro ? "Tente selecionar outra categoria ou ver todos." : "Em breve novos parceiros na sua área!"}
           </Text>
         </View>
       ) : (
@@ -631,9 +1100,11 @@ export default function ClienteFood() {
           showsVerticalScrollIndicator={false}
         >
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: "Inter_700Bold" }]}>
-            Restaurantes parceiros
+            {subcategoriaFiltro
+              ? (subcategorias.find(s => s.id === subcategoriaFiltro)?.nome ?? "Restaurantes")
+              : "Restaurantes parceiros"}
           </Text>
-          {parceiros.map(parceiro => {
+          {parceirosFiltrados.map(parceiro => {
             const cor = parceiro.cor || MOD_COLOR;
             return (
               <Pressable
@@ -648,6 +1119,11 @@ export default function ClienteFood() {
                   <Text style={[styles.restNome, { color: colors.text, fontFamily: "Inter_700Bold" }]}>
                     {parceiro.nome}
                   </Text>
+                  {parceiro.subcategoria_nome ? (
+                    <Text style={[styles.metaText, { color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 12, marginBottom: 2 }]}>
+                      {parceiro.subcategoria_emoji ? `${parceiro.subcategoria_emoji} ` : ""}{parceiro.subcategoria_nome}
+                    </Text>
+                  ) : null}
                   <View style={styles.restMeta}>
                     <Feather name="package" size={13} color={colors.textMuted} />
                     <Text style={[styles.metaText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
@@ -671,6 +1147,9 @@ export default function ClienteFood() {
         onInicio={() => {}}
         onCarrinho={() => {}}
         onFinalizar={() => {}}
+        empresaId={null}
+        empresaNome={null}
+        clienteNome={customer?.nome ?? null}
       />
     </View>
   );
@@ -732,26 +1211,60 @@ const styles = StyleSheet.create({
 });
 
 // ── Product customization modal ───────────────────────────────────────────────
-function ProdutoModal({ produto, accentColor, colors, insets, onClose, onAdd }: {
+function ProdutoModal({ produto, accentColor, colors, insets, onClose, onAdd, precoPromocional }: {
   produto: Produto;
   accentColor: string;
   colors: any;
   insets: { bottom: number };
   onClose: () => void;
-  onAdd: (tamanho: Tamanho | null, extras: Extra[], qtd: number) => void;
+  onAdd: (tamanho: Tamanho | null, extras: Extra[], qtd: number, precoPromo?: number | null, gruposSel?: Record<number, OpcaoGrupo[]>) => void;
+  precoPromocional?: number | null;
 }) {
-  const tamanhos = Array.isArray(produto.tamanhos) ? produto.tamanhos : [];
+  const tamanhos: Tamanho[] = (() => {
+    const raw = produto.tamanhos;
+    if (Array.isArray(raw)) return raw as Tamanho[];
+    if (typeof raw === "string") { try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; } }
+    return [];
+  })();
+  const grupos: Grupo[] = (() => {
+    const raw = produto.grupos;
+    if (Array.isArray(raw)) return raw as Grupo[];
+    if (typeof raw === "string") { try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; } }
+    return [];
+  })();
   const [extrasSel, setExtrasSel] = useState<Extra[]>([]);
+  const [gruposSel, setGruposSel] = useState<Record<number, OpcaoGrupo[]>>({});
   const [tamanhoSel, setTamanhoSel] = useState<Tamanho | null>(tamanhos.length > 0 ? tamanhos[0] : null);
   const [qtd, setQtd] = useState(1);
 
-  const basePreco = tamanhoSel ? Number(tamanhoSel.preco) : Number(produto.preco);
-  const precoTotal = (basePreco + extrasSel.reduce((s, e) => s + Number(e.preco), 0)) * qtd;
+  const hasPromo = precoPromocional != null && precoPromocional > 0;
+  const precoOriginal = Number(produto.preco);
+  const basePreco = tamanhoSel ? Number(tamanhoSel.preco) : (hasPromo ? precoPromocional! : precoOriginal);
+  const gruposTotal = Object.values(gruposSel).flat().reduce((s, o) => s + Number(o.preco_adicional), 0);
+  const precoTotal = (basePreco + extrasSel.reduce((s, e) => s + Number(e.preco), 0) + gruposTotal) * qtd;
 
   const toggleExtra = (extra: Extra) => {
     setExtrasSel(prev =>
       prev.find(e => e.id === extra.id) ? prev.filter(e => e.id !== extra.id) : [...prev, extra]
     );
+  };
+
+  const toggleOpcaoGrupo = (grupo: Grupo, opcao: OpcaoGrupo) => {
+    setGruposSel(prev => {
+      const current = prev[grupo.id] ?? [];
+      const isSelected = current.some(o => o.id === opcao.id);
+      if (isSelected) {
+        const next = current.filter(o => o.id !== opcao.id);
+        return { ...prev, [grupo.id]: next };
+      }
+      if (grupo.max_selecoes === 1) {
+        return { ...prev, [grupo.id]: [opcao] };
+      }
+      if (current.length >= grupo.max_selecoes) {
+        return prev;
+      }
+      return { ...prev, [grupo.id]: [...current, opcao] };
+    });
   };
 
   return (
@@ -774,9 +1287,25 @@ function ProdutoModal({ produto, accentColor, colors, insets, onClose, onAdd }: 
             <Text style={[mStyles.prodDesc, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{produto.descricao}</Text>
           ) : null}
 
-          <Text style={[mStyles.basePreco, { color: accentColor, fontFamily: "Inter_700Bold" }]}>
-            R$ {basePreco.toFixed(2)}
-          </Text>
+          {hasPromo && !tamanhoSel ? (
+            <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+              <Text style={{ color: colors.textSecondary, fontSize: 16, textDecorationLine: "line-through", fontFamily: "Inter_400Regular" }}>
+                R$ {precoOriginal.toFixed(2)}
+              </Text>
+              <Text style={[mStyles.basePreco, { color: accentColor, fontFamily: "Inter_700Bold" }]}>
+                R$ {precoPromocional!.toFixed(2)}
+              </Text>
+              <View style={{ backgroundColor: accentColor + "22", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
+                <Text style={{ color: accentColor, fontSize: 12, fontFamily: "Inter_700Bold" }}>
+                  -{Math.round(((precoOriginal - precoPromocional!) / precoOriginal) * 100)}%
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={[mStyles.basePreco, { color: accentColor, fontFamily: "Inter_700Bold" }]}>
+              R$ {basePreco.toFixed(2)}
+            </Text>
+          )}
 
           {tamanhos.length > 0 && (
             <>
@@ -813,41 +1342,168 @@ function ProdutoModal({ produto, accentColor, colors, insets, onClose, onAdd }: 
             </>
           )}
 
-          {produto.extras.length > 0 && (
-            <>
-              <Text style={[mStyles.sectionLabel, { color: colors.text, fontFamily: "Inter_700Bold" }]}>
-                Adicionais / Opções
-              </Text>
-              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 220 }}>
-                {produto.extras.map(extra => {
-                  const sel = !!extrasSel.find(e => e.id === extra.id);
-                  return (
-                    <Pressable key={extra.id} onPress={() => toggleExtra(extra)}
-                      style={[mStyles.extraRow, {
-                        borderColor: sel ? accentColor : colors.border,
-                        backgroundColor: sel ? accentColor + "12" : colors.backgroundSecondary,
-                        marginBottom: 8,
-                      }]}>
-                      <View style={[mStyles.extraCheck, {
-                        borderColor: sel ? accentColor : colors.border,
-                        backgroundColor: sel ? accentColor : "transparent",
-                      }]}>
-                        {sel && <Feather name="check" size={11} color="#fff" />}
-                      </View>
-                      <Text style={[mStyles.extraNome, { color: colors.text, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>
-                        {extra.nome}
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 340 }}>
+
+            {/* ── Grupos de Adicionais ──────────────────────────────── */}
+            {grupos.map(grupo => {
+              const selOps = gruposSel[grupo.id] ?? [];
+              const selCount = selOps.length;
+              const isObrig = grupo.obrigatorio;
+              const isSatisfied = isObrig ? selCount >= grupo.min_selecoes : true;
+              const isMaxed = selCount >= grupo.max_selecoes;
+              return (
+                <View key={grupo.id} style={{ marginBottom: 12 }}>
+                  {/* Group header */}
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <View>
+                      <Text style={[mStyles.sectionLabel, { color: colors.text, fontFamily: "Inter_700Bold", marginBottom: 0 }]}>
+                        {grupo.nome}
                       </Text>
+                      <Text style={{ color: colors.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" }}>
+                        {grupo.min_selecoes > 0 && grupo.min_selecoes === grupo.max_selecoes
+                          ? `Escolha ${grupo.max_selecoes} iten${grupo.max_selecoes === 1 ? "" : "s"}`
+                          : `Escolha até ${grupo.max_selecoes} iten${grupo.max_selecoes === 1 ? "" : "s"}`
+                        }
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+                      {isObrig && (
+                        <View style={{ backgroundColor: isSatisfied ? "#10B98120" : "#EF444418", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ color: isSatisfied ? "#10B981" : "#EF4444", fontSize: 11, fontFamily: "Inter_700Bold" }}>
+                            {isSatisfied ? "✓ Ok" : "Obrigatório"}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ backgroundColor: accentColor + "20", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ color: accentColor, fontSize: 11, fontFamily: "Inter_700Bold" }}>
+                          {selCount}/{grupo.max_selecoes}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  {/* Opcoes */}
+                  {grupo.opcoes.map(op => {
+                    const isSel = selOps.some(o => o.id === op.id);
+                    const isDisabled = !isSel && isMaxed;
+                    const isRadio = grupo.max_selecoes === 1;
+                    return (
+                      <Pressable
+                        key={op.id}
+                        onPress={() => !isDisabled && toggleOpcaoGrupo(grupo, op)}
+                        style={[mStyles.extraRow, {
+                          borderColor: isSel ? accentColor : (!isSatisfied && isObrig ? "#EF444460" : colors.border),
+                          backgroundColor: isSel ? accentColor + "12" : colors.backgroundSecondary,
+                          marginBottom: 6,
+                          opacity: isDisabled ? 0.5 : 1,
+                        }]}
+                      >
+                        {/* Radio or Checkbox indicator */}
+                        <View style={[
+                          mStyles.extraCheck,
+                          isRadio ? { borderRadius: 999 } : {},
+                          {
+                            borderColor: isSel ? accentColor : colors.border,
+                            backgroundColor: isSel ? accentColor : "transparent",
+                          }
+                        ]}>
+                          {isSel && (isRadio
+                            ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" }} />
+                            : <Feather name="check" size={11} color="#fff" />
+                          )}
+                        </View>
+                        <Text style={[mStyles.extraNome, { color: colors.text, fontFamily: "Inter_500Medium" }]} numberOfLines={1}>
+                          {op.nome}
+                        </Text>
+                        {Number(op.preco_adicional) > 0 && (
+                          <Text style={[mStyles.extraPreco, { color: accentColor, fontFamily: "Inter_600SemiBold" }]}>
+                            +R$ {Number(op.preco_adicional).toFixed(2)}
+                          </Text>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              );
+            })}
+
+            {/* ── Extras avulsos ────────────────────────────────────── */}
+            {produto.extras.length > 0 && (() => {
+              const extrasObrig = produto.extras.filter(e => e.obrigatorio);
+              const extrasOpc = produto.extras.filter(e => !e.obrigatorio);
+              const missingObrig = extrasObrig.filter(e => !extrasSel.find(s => s.id === e.id));
+              const renderExtra = (extra: Extra) => {
+                const sel = !!extrasSel.find(e => e.id === extra.id);
+                const isObrig = extra.obrigatorio;
+                const missing = isObrig && !sel;
+                return (
+                  <Pressable key={extra.id} onPress={() => toggleExtra(extra)}
+                    style={[mStyles.extraRow, {
+                      borderColor: sel ? accentColor : (missing ? "#EF4444" : colors.border),
+                      backgroundColor: sel ? accentColor + "12" : colors.backgroundSecondary,
+                      marginBottom: 8,
+                    }]}>
+                    <View style={[mStyles.extraCheck, {
+                      borderColor: sel ? accentColor : (missing ? "#EF4444" : colors.border),
+                      backgroundColor: sel ? accentColor : "transparent",
+                    }]}>
+                      {sel && <Feather name="check" size={11} color="#fff" />}
+                    </View>
+                    <Text style={[mStyles.extraNome, { color: colors.text, fontFamily: "Inter_600SemiBold", flex: 1 }]} numberOfLines={1}>
+                      {extra.nome}
+                    </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      {isObrig && (
+                        <View style={{ backgroundColor: "#EF444418", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                          <Text style={{ color: "#EF4444", fontSize: 10, fontFamily: "Inter_700Bold" }}>Obrigatório</Text>
+                        </View>
+                      )}
                       {Number(extra.preco) > 0 && (
                         <Text style={[mStyles.extraPreco, { color: accentColor, fontFamily: "Inter_600SemiBold" }]}>
                           +R$ {Number(extra.preco).toFixed(2)}
                         </Text>
                       )}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </>
-          )}
+                    </View>
+                  </Pressable>
+                );
+              };
+              return (
+                <>
+                  {extrasObrig.length > 0 && (
+                    <>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                        <Text style={[mStyles.sectionLabel, { color: colors.text, fontFamily: "Inter_700Bold", marginBottom: 0 }]}>
+                          Obrigatórios
+                        </Text>
+                        <View style={{ backgroundColor: "#EF444420", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+                          <Text style={{ color: "#EF4444", fontSize: 10, fontFamily: "Inter_700Bold" }}>
+                            {extrasObrig.length - missingObrig.length}/{extrasObrig.length}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={{ marginTop: 6 }}>
+                        {extrasObrig.map(renderExtra)}
+                      </View>
+                    </>
+                  )}
+                  {extrasOpc.length > 0 && (
+                    <>
+                      <Text style={[mStyles.sectionLabel, { color: colors.text, fontFamily: "Inter_700Bold", marginTop: extrasObrig.length > 0 ? 8 : 4 }]}>
+                        Adicionais / Opções
+                      </Text>
+                      <View style={{ marginTop: 6 }}>
+                        {extrasOpc.map(renderExtra)}
+                      </View>
+                    </>
+                  )}
+                  {missingObrig.length > 0 && (
+                    <Text style={{ color: "#EF4444", fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 4, marginBottom: 2 }}>
+                      ⚠ Selecione: {missingObrig.map(e => e.nome).join(", ")}
+                    </Text>
+                  )}
+                </>
+              );
+            })()}
+          </ScrollView>
 
           <View style={mStyles.addRow}>
             <View style={[mStyles.qtdRow, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
@@ -860,12 +1516,21 @@ function ProdutoModal({ produto, accentColor, colors, insets, onClose, onAdd }: 
                 <Feather name="plus" size={16} color="#fff" />
               </Pressable>
             </View>
-            <Pressable onPress={() => onAdd(tamanhoSel, extrasSel, qtd)}
-              style={[mStyles.addBtn, { backgroundColor: accentColor }]}>
-              <Text style={[mStyles.addBtnText, { fontFamily: "Inter_700Bold" }]}>
-                Adicionar  •  R$ {precoTotal.toFixed(2)}
-              </Text>
-            </Pressable>
+            {(() => {
+              const extrasObrig = produto.extras.filter(e => e.obrigatorio);
+              const missingExtrasObrig = extrasObrig.filter(e => !extrasSel.find(s => s.id === e.id));
+              const missingGrupos = grupos.filter(g => g.obrigatorio && (gruposSel[g.id]?.length ?? 0) < g.min_selecoes);
+              const canAdd = missingExtrasObrig.length === 0 && missingGrupos.length === 0;
+              return (
+                <Pressable
+                  onPress={() => { if (canAdd) onAdd(tamanhoSel, extrasSel, qtd, hasPromo && !tamanhoSel ? precoPromocional : null, gruposSel); }}
+                  style={[mStyles.addBtn, { backgroundColor: canAdd ? accentColor : "#9CA3AF" }]}>
+                  <Text style={[mStyles.addBtnText, { fontFamily: "Inter_700Bold" }]}>
+                    {canAdd ? `Adicionar  •  R$ ${precoTotal.toFixed(2)}` : "Selecione os itens obrigatórios"}
+                  </Text>
+                </Pressable>
+              );
+            })()}
           </View>
         </View>
       </View>

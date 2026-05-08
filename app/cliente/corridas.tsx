@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { fmtDataCurtaHora } from "@/utils/dateFormat";
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   useColorScheme, ActivityIndicator, RefreshControl,
@@ -157,7 +158,7 @@ export default function MinhasCorridas() {
                     </Text>
                   </View>
                   <Text style={[styles.data, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                    {new Date(corrida.criado_em).toLocaleDateString("pt-BR")} · {new Date(corrida.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    {fmtDataCurtaHora(corrida.criado_em)}
                   </Text>
                 </View>
 
