@@ -93,22 +93,16 @@ const TIPO_LABEL: Record<string, string> = {
   onibus: "🚌 Ônibus", van: "🚐 Van", aviao: "✈️ Avião", barco: "🚢 Barco",
 };
 
-const MESES_P = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
-const MESES_L = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
-const DIAS_P  = ["dom","seg","ter","qua","qui","sex","sáb"];
-
 function formatDate(d: string) {
   if (!d) return "";
   const dt = new Date(d + "T00:00:00");
-  if (isNaN(dt.getTime())) return "";
-  return `${dt.getDate().toString().padStart(2,"0")} ${MESES_P[dt.getMonth()]}`;
+  return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
 }
 
 function formatDateLong(d: string) {
   if (!d) return "";
   const dt = new Date(d + "T00:00:00");
-  if (isNaN(dt.getTime())) return "";
-  return `${DIAS_P[dt.getDay()]}, ${dt.getDate().toString().padStart(2,"0")} de ${MESES_L[dt.getMonth()]}`;
+  return dt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "long" });
 }
 
 function StatusBadge({ status, colors }: { status: string; colors: any }) {
@@ -1017,8 +1011,6 @@ export default function ClientePassagens() {
         onInicio={() => { setActiveTab("busca"); resetBusca(); }}
         onCarrinho={() => setActiveTab("minhas")}
         onFinalizar={() => { if (step === "pagamento") requireAuth(() => handleComprar()); }}
-        empresaId={empresaId}
-        empresaNome={nomeEmpresa}
       />
 
       {/* ── MODAL DETALHE PASSAGEM ── */}

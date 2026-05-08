@@ -18,7 +18,6 @@ import { router } from "expo-router";
 import Colors from "@/constants/colors";
 import ClienteBottomNav from "@/components/ClienteBottomNav";
 import { useCustomerAuth } from "@/context/CustomerAuthContext";
-import { useLocalSearchParams } from "expo-router";
 const API_BASE = process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api` : "/api";
 
 const { width } = Dimensions.get("window");
@@ -173,11 +172,7 @@ function PromoCard({ promo, isDark, colors }: { promo: Promocao; isDark: boolean
       // Vai direto pra tela do restaurante com o produto pré-selecionado
       router.push({
         pathname: "/cliente/food" as any,
-        params: {
-          empresaId: String(promo.empresa_id),
-          produtoId: String(promo.produto_id),
-          precoPromocional: promo.preco_promocional != null ? String(promo.preco_promocional) : "",
-        },
+        params: { empresaId: String(promo.empresa_id), produtoId: String(promo.produto_id) },
       });
       return;
     }
@@ -327,14 +322,12 @@ export default function ClienteHome() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { customer, isLoggedIn } = useCustomerAuth();
-  const { empresaId } = useLocalSearchParams<{ empresaId?: string }>();
   const topPadding = insets.top;
   const [promocoes, setPromocoes] = useState<Promocao[]>([]);
   const [destaques, setDestaques] = useState<EmpresaDestaque[]>([]);
 
   useEffect(() => {
-    const url = empresaId ? `${API_BASE}/food/promocoes?empresa_id=${encodeURIComponent(String(empresaId))}` : `${API_BASE}/food/promocoes`;
-    fetch(url)
+    fetch(`${API_BASE}/food/promocoes`)
       .then(r => r.json())
       .then(d => Array.isArray(d) ? setPromocoes(d.slice(0, 10)) : null)
       .catch(() => {});
@@ -343,7 +336,7 @@ export default function ClienteHome() {
       .then(r => r.json())
       .then(d => Array.isArray(d) ? setDestaques(d.filter((e: EmpresaDestaque) => e.destaque)) : null)
       .catch(() => {});
-  }, [empresaId]);
+  }, []);
 
   const initials = customer?.nome
     ? customer.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()

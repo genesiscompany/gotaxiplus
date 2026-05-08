@@ -19,12 +19,10 @@ const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
   : "http://localhost:8080/api";
 
 function fmt(v: number) {
-  return `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 function fmtDate(d: string) {
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return "";
-  return `${dt.getDate().toString().padStart(2,"0")}/${(dt.getMonth()+1).toString().padStart(2,"0")}/${dt.getFullYear()}`;
+  return new Date(d).toLocaleDateString("pt-BR");
 }
 
 export default function AfiliadosRelatorio() {

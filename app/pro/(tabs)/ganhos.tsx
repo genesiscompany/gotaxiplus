@@ -9,17 +9,8 @@ const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
   : "/api";
 
 function fmtBRL(v: number) { return `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`; }
-const MESES_G = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
-function fmtData(s: string) {
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return "";
-  return `${d.getDate().toString().padStart(2,"0")} ${MESES_G[d.getMonth()]}`;
-}
-function fmtDtCurta(s: string) {
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return "";
-  return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear().toString().slice(-2)}`;
-}
+function fmtData(s: string) { return new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }); }
+function fmtDtCurta(s: string) { return new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }); }
 
 type RepasseSemana = {
   id: number; semana_inicio: string; semana_fim: string;
@@ -137,30 +128,12 @@ export default function ProGanhos() {
 
   if (!proUser) return null;
 
-  // Use server-calculated liquid values (already account for food/PDV isenção).
-  // Fallback to percentage calculation when server field absent (old API).
   const periodos = [
-    {
-      label: "Hoje",
-      bruto: Number(stats?.hoje || 0),
-      liquido: stats?.ganhos_hoje_liquido   != null ? Number(stats.ganhos_hoje_liquido)   : +(Number(stats?.hoje   || 0) * meuPct / 100),
-    },
-    {
-      label: "Semana",
-      bruto: Number(stats?.semana || 0),
-      liquido: stats?.ganhos_semana_liquido != null ? Number(stats.ganhos_semana_liquido) : +(Number(stats?.semana || 0) * meuPct / 100),
-    },
-    {
-      label: "Mês",
-      bruto: Number(stats?.mes || 0),
-      liquido: stats?.ganhos_mes_liquido    != null ? Number(stats.ganhos_mes_liquido)    : +(Number(stats?.mes    || 0) * meuPct / 100),
-    },
-    {
-      label: "Total",
-      bruto: Number(proUser.total_ganhos || 0),
-      liquido: stats?.ganhos_total_liquido  != null ? Number(stats.ganhos_total_liquido)  : +(Number(proUser.total_ganhos || 0) * meuPct / 100),
-    },
-  ].map(p => ({ ...p, goTaxi: +(p.bruto - p.liquido).toFixed(2) }));
+    { label: "Hoje",  bruto: Number(stats?.hoje || 0) },
+    { label: "Semana", bruto: Number(stats?.semana || 0) },
+    { label: "Mês",    bruto: Number(stats?.mes || 0) },
+    { label: "Total",  bruto: Number(proUser.total_ganhos || 0) },
+  ].map(p => ({ ...p, liquido: +(p.bruto * meuPct / 100).toFixed(2), goTaxi: +(p.bruto * taxaPct / 100).toFixed(2) }));
 
   const repStatus = repasse?.status || "pendente";
   const repCfg = STATUS_REP[repStatus] || STATUS_REP.pendente;
@@ -230,7 +203,7 @@ export default function ProGanhos() {
               {repasse.pago_em && (
                 <View style={styles.repRow}>
                   <Text style={styles.repLabel}>Pago em</Text>
-                  <Text style={[styles.repVal, { color: "#10B981" }]}>{fmtDtCurta(repasse.pago_em)}</Text>
+                  <Text style={[styles.repVal, { color: "#10B981" }]}>{new Date(repasse.pago_em).toLocaleDateString("pt-BR")}</Text>
                 </View>
               )}
 

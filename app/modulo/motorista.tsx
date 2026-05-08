@@ -17,13 +17,7 @@ const EMPRESA_ID = 2;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(val: number | string | undefined): string {
   const n = Number(val || 0);
-  return n.toFixed(2).replace(".", ",");
-}
-function fmtDataSimples(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
-  return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`;
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 const STATUS_CONF: Record<string, { label: string; color: string; icon: string; desc: string }> = {
@@ -581,7 +575,7 @@ function GanhosTab({ token, isDark, colors }: any) {
                   {c.origem_endereco} → {c.destino_endereco}
                 </Text>
                 <Text style={[styles.corridaHistDate, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
-                  {fmtDataSimples(c.criado_em)}
+                  {new Date(c.criado_em).toLocaleDateString("pt-BR")}
                   {c.avaliacao ? ` · ${"★".repeat(c.avaliacao)}` : ""}
                 </Text>
               </View>
@@ -716,7 +710,7 @@ function PerfilTab({ motorista, token, onRefresh, onLogout, isDark, colors }: an
           { label: "Repasse GoTaxi", value: `${motorista.percentual_repasse || 20}% por corrida` },
           { label: "Total de corridas", value: String(motorista.total_corridas || 0) },
           { label: "Avaliação média", value: motorista.avaliacao_media ? `${Number(motorista.avaliacao_media).toFixed(1)} ★` : "Sem avaliações" },
-          { label: "Membro desde", value: motorista.criado_em ? fmtDataSimples(motorista.criado_em) : "-" },
+          { label: "Membro desde", value: motorista.criado_em ? new Date(motorista.criado_em).toLocaleDateString("pt-BR") : "-" },
         ].map(item => (
           <View key={item.label} style={[styles.contaRow, { borderTopColor: isDark ? "#334155" : "#f1f5f9" }]}>
             <Text style={[styles.contaLbl, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{item.label}</Text>

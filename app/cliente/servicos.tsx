@@ -128,7 +128,7 @@ export default function ClienteServicos() {
     const dataExibida = (() => {
       const amanha = new Date();
       amanha.setDate(amanha.getDate() + 1);
-      return `${amanha.getDate().toString().padStart(2,"0")}/${(amanha.getMonth()+1).toString().padStart(2,"0")}/${amanha.getFullYear()}`;
+      return amanha.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
     })();
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
@@ -337,8 +337,6 @@ export default function ClienteServicos() {
         onInicio={() => { setProfSel(null); setServicoSel(null); setHorarioSel(null); }}
         onCarrinho={() => {}}
         onFinalizar={() => { if (horarioSel) requireAuth(() => handleAgendar()); }}
-        empresaId={empresaId || null}
-        empresaNome={nomeEmpresa}
       />
     </View>
   );

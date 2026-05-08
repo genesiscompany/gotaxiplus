@@ -440,7 +440,7 @@ export default function ClienteEntrega() {
             <View style={[styles.previsaoCard, { borderColor: colors.border, backgroundColor: colors.backgroundSecondary }]}>
               <Feather name="calendar" size={18} color={MOD_COLOR} />
               <Text style={[styles.previsaoText, { color: colors.text, fontFamily: "Inter_500Medium" }]}>
-                Previsão: {(() => { const d = new Date(encomenda.data_previsao); return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`; })()}
+                Previsão: {new Date(encomenda.data_previsao).toLocaleDateString("pt-BR")}
               </Text>
             </View>
           )}
@@ -464,7 +464,7 @@ export default function ClienteEntrega() {
                   <View style={styles.timelineContent}>
                     <Text style={[styles.timelineEvento, { color: colors.text, fontFamily: "Inter_500Medium" }]}>{h.descricao || info.label}</Text>
                     <Text style={[styles.timelineHora, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
-                      {(() => { const d = new Date(h.registrado_em); if (isNaN(d.getTime())) return ""; return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")} ${d.getHours().toString().padStart(2,"0")}:${d.getMinutes().toString().padStart(2,"0")}`; })()}
+                      {new Date(h.registrado_em).toLocaleString("pt-BR")}
                     </Text>
                   </View>
                 </View>
@@ -734,7 +734,6 @@ export default function ClienteEntrega() {
         onInicio={() => { setView("inicio"); setEncomenda(null); setCodigo(""); setErro(""); }}
         onCarrinho={() => setView("rastrear")}
         onFinalizar={() => setView("solicitar")}
-        empresaId={empresaId ? Number(empresaId) : null}
       />
     </View>
   );

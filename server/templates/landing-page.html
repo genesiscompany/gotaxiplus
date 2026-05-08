@@ -361,16 +361,25 @@
       <h2 class="section-title" style="color:white">Baixe o app e peça <span style="color:var(--yellow)">agora</span></h2>
       <p class="section-sub">Disponível para Android e iOS. Faça pedidos, rastreie em tempo real e aproveite as melhores ofertas perto de você.</p>
       <div class="app-stores">
-        <a href="https://play.google.com/store/apps/details?id=br.gotaxi.app" target="_blank" class="store-btn" style="padding:0;overflow:hidden;border:none;background:transparent;">
-          <img src="https://play.google.com/intl/pt-BR/badges/static/images/badges/pt-br_badge_web_generic.png" alt="Disponível no Google Play" style="height:64px;display:block;" />
+        <a href="exp://EXPS_URL_PLACEHOLDER" class="store-btn">
+          <span class="store-icon">📱</span>
+          <div class="store-text">
+            <small>Abrir com</small>
+            <strong>Expo Go</strong>
+          </div>
+        </a>
+        <a href="#app" class="store-btn" onclick="document.getElementById('qrSection').scrollIntoView({behavior:'smooth'});return false;">
+          <span class="store-icon">📷</span>
+          <div class="store-text">
+            <small>Escanear</small>
+            <strong>QR Code</strong>
+          </div>
         </a>
       </div>
     </div>
     <div id="qrSection" style="text-align:center">
       <div class="qr-box">
-        <a href="https://play.google.com/store/apps/details?id=br.gotaxi.app" target="_blank">
-          <img src="/assets/qrcode-play.png" alt="QR Code Google Play" style="width:160px;height:160px;display:block;margin:0 auto;border-radius:0.5rem;" />
-        </a>
+        <div class="qr-placeholder">📱</div>
         <p>Aponte a câmera para<br />baixar o GoTaxi</p>
       </div>
     </div>
@@ -471,6 +480,5 @@
     observer.observe(el);
   });
 </script>
-<script src="https://untaeegmmfnwjjmpvkwz.supabase.co/functions/v1/widget-embed" data-user="dfd690e8-7ce4-4dc5-acb7-fd24c56535b5" defer></script>
 </body>
 </html>

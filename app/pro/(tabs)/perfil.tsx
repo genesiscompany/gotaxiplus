@@ -818,7 +818,7 @@ export default function ProPerfil() {
           {[
             { label: "Repasse GoTaxi", val: `${proUser.percentual_repasse || 3}%` },
             { label: "Saldo disponível", val: `R$ ${Number(proUser.saldo || 0).toFixed(2).replace(".", ",")}` },
-            { label: "Membro desde", val: proUser.criado_em ? (() => { const d = new Date(proUser.criado_em); return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`; })() : "–" },
+            { label: "Membro desde", val: proUser.criado_em ? new Date(proUser.criado_em).toLocaleDateString("pt-BR") : "–" },
           ].map(r => (
             <View key={r.label} style={styles.infoRow}>
               <Text style={styles.infoLabel}>{r.label}</Text>
@@ -970,6 +970,4 @@ const styles = StyleSheet.create({
   catHabList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   catHabBadge: { backgroundColor: "#1DB95420", borderWidth: 1.5, borderColor: "#1DB95450", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
   catHabBadgeText: { fontSize: 12, fontWeight: "700", color: "#1DB954" },
-  tipoBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, borderColor: "#2A2A2A", backgroundColor: "#1A1A1A", marginRight: 6, marginBottom: 6 },
-  tipoBtnTxt: { fontSize: 13, fontWeight: "600" as const, color: "#888" },
 });

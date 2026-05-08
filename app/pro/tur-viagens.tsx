@@ -124,7 +124,7 @@ const STATUS_MAP: Record<string, { bg: string; text: string; label: string }> = 
   embarcado:  { bg: "#3B82F620", text: "#3B82F6", label: "Embarcado" },
 };
 
-const fmtBRL = (v: number) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+const fmtBRL = (v: number) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export default function TurViagensOperador() {
   const [tab, setTab]             = useState<"login" | "painel">("login");

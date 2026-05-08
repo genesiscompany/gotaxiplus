@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, useColorScheme, Platform, Alert, ActivityIndicator, Image, TextInput } from "react-native";
-import PixPagamento from "@/components/PixPagamento";
+import { View, Text, StyleSheet, ScrollView, Pressable, useColorScheme, Platform, Alert, ActivityIndicator, Image } from "react-native";
 import SegmentoBottomNav, { SEGMENTO_NAV_HEIGHT } from "@/components/SegmentoBottomNav";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -55,16 +54,11 @@ export default function ClienteEcommerce() {
   const [categoriaSel, setCategoriaSel] = useState("Todos");
   const [showCarrinho, setShowCarrinho] = useState(false);
   const [pedidoFeito, setPedidoFeito] = useState(false);
-  const [pedidoId, setPedidoId] = useState<number | null>(null);
   const [produtosDB, setProdutosDB] = useState<ProdutoDB[]>([]);
   const [loadingProdutos, setLoadingProdutos] = useState(true);
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [metodosPag, setMetodosPag] = useState<string[]>(["pix", "dinheiro", "credito", "debito"]);
   const [formaSel, setFormaSel] = useState<string | null>(null);
-  const [tipoEntrega, setTipoEntrega] = useState<"delivery" | "retirar">("delivery");
-  const [horarioRetirada, setHorarioRetirada] = useState("");
-  const [taxaEntregaEco, setTaxaEntregaEco] = useState(0);
-  const [tempoEntregaEco, setTempoEntregaEco] = useState(30);
 
   const params = useLocalSearchParams<{ empresaId?: string; nomeEmpresa?: string; corEmpresa?: string }>();
   const empresaId = Number(params.empresaId ?? 0);
@@ -86,10 +80,6 @@ export default function ClienteEcommerce() {
     fetch(`${API_BASE}/public/servicos/${empresaId}/formas-pagamento`)
       .then(r => r.json())
       .then(data => { if (Array.isArray(data?.metodos) && data.metodos.length) setMetodosPag(data.metodos); })
-      .catch(() => {});
-    fetch(`${API_BASE}/food/empresa/${empresaId}/config-entrega`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) { setTaxaEntregaEco(Number(d.taxa_entrega ?? 0)); setTempoEntregaEco(Number(d.tempo_entrega_min ?? 30)); } })
       .catch(() => {});
   }, [empresaId]);
 
@@ -119,15 +109,10 @@ export default function ClienteEcommerce() {
     }
     setEnviandoPedido(true);
     try {
-      const taxa = tipoEntrega === "delivery" ? taxaEntregaEco : 0;
-      const totalFinal = myTotal + taxa;
       const body = {
         empresa_id: empresaId,
         itens: myItems.map(c => ({ nome: c.produto.nome, quantidade: c.qtd, preco: c.produto.preco })),
-        total: totalFinal,
-        taxa_entrega: taxa,
-        tipo_entrega: tipoEntrega,
-        horario_retirada: tipoEntrega === "retirar" ? (horarioRetirada || "A combinar") : null,
+        total: myTotal,
         cliente_nome: customer?.nome || "Cliente App",
         cliente_telefone: customer?.whatsapp || "",
         cliente_endereco: "",
@@ -142,14 +127,11 @@ export default function ClienteEcommerce() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || "Erro ao finalizar");
-      setPedidoId(data.id ?? null);
       clearCart();
       setFormaSel(null);
       setShowCarrinho(false);
       setPedidoFeito(true);
-      if (formaSel !== "pix") {
-        setTimeout(() => setPedidoFeito(false), 4000);
-      }
+      setTimeout(() => setPedidoFeito(false), 4000);
     } catch (err: any) {
       Alert.alert("Erro", err?.message || "Não foi possível finalizar o pedido. Tente novamente.");
     } finally {
@@ -158,23 +140,6 @@ export default function ClienteEcommerce() {
   };
 
   if (pedidoFeito) {
-    if (formaSel === "pix" && empresaId) {
-      return (
-        <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }]}>
-          <PixPagamento
-            empresaId={empresaId}
-            pedidoId={pedidoId}
-            modulo="ecommerce"
-            colors={colors}
-            onClose={() => {
-              setPedidoFeito(false);
-              setPedidoId(null);
-            }}
-          />
-        </View>
-      );
-    }
-
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
         <View style={[styles.sucessoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -242,81 +207,18 @@ export default function ClienteEcommerce() {
                 <Text style={[styles.totalValue, { color: colors.text, fontFamily: "Inter_600SemiBold" }]}>R$ {myTotal.toFixed(2)}</Text>
               </View>
               <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Taxa de entrega</Text>
-                {tipoEntrega === "retirar" || taxaEntregaEco === 0 ? (
-                  <Text style={[styles.totalValue, { color: "#10B981", fontFamily: "Inter_600SemiBold" }]}>Grátis</Text>
-                ) : (
-                  <Text style={[styles.totalValue, { color: colors.text, fontFamily: "Inter_600SemiBold" }]}>R$ {taxaEntregaEco.toFixed(2)}</Text>
-                )}
+                <Text style={[styles.totalLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Frete</Text>
+                <Text style={[styles.totalValue, { color: "#10B981", fontFamily: "Inter_600SemiBold" }]}>Grátis</Text>
               </View>
               <View style={[styles.totalDivider, { backgroundColor: colors.border }]} />
               <View style={styles.totalRow}>
                 <Text style={[styles.totalLabel, { color: colors.text, fontFamily: "Inter_700Bold", fontSize: 16 }]}>Total</Text>
-                <Text style={[styles.totalValue, { color: corEmpresa, fontFamily: "Inter_700Bold", fontSize: 20 }]}>
-                  R$ {(myTotal + (tipoEntrega === "delivery" ? taxaEntregaEco : 0)).toFixed(2)}
-                </Text>
+                <Text style={[styles.totalValue, { color: corEmpresa, fontFamily: "Inter_700Bold", fontSize: 20 }]}>R$ {myTotal.toFixed(2)}</Text>
               </View>
             </View>
           )}
           {myItems.length > 0 && (
-            <View style={{ marginTop: 12, gap: 10 }}>
-              <Text style={{ color: colors.text, fontFamily: "Inter_700Bold", fontSize: 15 }}>Tipo de entrega</Text>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <Pressable onPress={() => setTipoEntrega("delivery")}
-                  style={[{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 12, borderWidth: 2,
-                    borderColor: tipoEntrega === "delivery" ? corEmpresa : colors.border,
-                    backgroundColor: tipoEntrega === "delivery" ? corEmpresa + "15" : colors.card }]}>
-                  <Feather name="truck" size={20} color={tipoEntrega === "delivery" ? corEmpresa : colors.textMuted} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[{ color: colors.text, fontFamily: tipoEntrega === "delivery" ? "Inter_700Bold" : "Inter_500Medium", fontSize: 14 }]}>Delivery</Text>
-                    <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>{tempoEntregaEco} min</Text>
-                  </View>
-                  {tipoEntrega === "delivery" && <Feather name="check-circle" size={18} color={corEmpresa} />}
-                </Pressable>
-                <Pressable onPress={() => setTipoEntrega("retirar")}
-                  style={[{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 12, borderWidth: 2,
-                    borderColor: tipoEntrega === "retirar" ? corEmpresa : colors.border,
-                    backgroundColor: tipoEntrega === "retirar" ? corEmpresa + "15" : colors.card }]}>
-                  <Feather name="shopping-bag" size={20} color={tipoEntrega === "retirar" ? corEmpresa : colors.textMuted} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[{ color: colors.text, fontFamily: tipoEntrega === "retirar" ? "Inter_700Bold" : "Inter_500Medium", fontSize: 14 }]}>Retirar</Text>
-                    <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>Na loja</Text>
-                  </View>
-                  {tipoEntrega === "retirar" && <Feather name="check-circle" size={18} color={corEmpresa} />}
-                </Pressable>
-              </View>
-              {tipoEntrega === "retirar" && (
-                <View style={{ gap: 8 }}>
-                  <Text style={[{ color: colors.text, fontFamily: "Inter_600SemiBold", fontSize: 13 }]}>Horário de retirada</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                    {["Agora", "15 min", "30 min", "1 hora"].map(opt => (
-                      <Pressable key={opt} onPress={() => setHorarioRetirada(opt)}
-                        style={[{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
-                          borderColor: horarioRetirada === opt ? corEmpresa : colors.border,
-                          backgroundColor: horarioRetirada === opt ? corEmpresa + "18" : colors.backgroundSecondary }]}>
-                        <Text style={[{ color: horarioRetirada === opt ? corEmpresa : colors.text,
-                          fontFamily: horarioRetirada === opt ? "Inter_600SemiBold" : "Inter_400Regular", fontSize: 13 }]}>{opt}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <TextInput
-                    style={[{ backgroundColor: colors.card, borderWidth: 1.5,
-                      borderColor: horarioRetirada && !["Agora", "15 min", "30 min", "1 hora"].includes(horarioRetirada) ? corEmpresa : colors.border,
-                      borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
-                      color: colors.text, fontFamily: "Inter_400Regular", fontSize: 14 }]}
-                    placeholder="Ou digite o horário: ex. 14:30"
-                    placeholderTextColor={colors.textMuted}
-                    value={["Agora", "15 min", "30 min", "1 hora"].includes(horarioRetirada) ? "" : horarioRetirada}
-                    onChangeText={v => setHorarioRetirada(v)}
-                    keyboardType="numbers-and-punctuation"
-                    maxLength={5}
-                  />
-                </View>
-              )}
-            </View>
-          )}
-          {myItems.length > 0 && (
-            <View style={{ marginTop: 4, gap: 10 }}>
+            <View style={{ marginTop: 16, gap: 10 }}>
               <Text style={{ color: colors.text, fontFamily: "Inter_700Bold", fontSize: 15 }}>Forma de pagamento</Text>
               {metodosPag.length === 0 ? (
                 <Text style={{ color: colors.textMuted, fontSize: 13, fontFamily: "Inter_400Regular" }}>
@@ -353,8 +255,6 @@ export default function ClienteEcommerce() {
           onInicio={() => setShowCarrinho(false)}
           onCarrinho={() => {}}
           onFinalizar={myItems.length > 0 ? () => requireAuth(() => handleFinalizar()) : undefined}
-          empresaId={empresaId || null}
-          empresaNome={nomeEmpresa}
         />
       </View>
     );
@@ -449,8 +349,6 @@ export default function ClienteEcommerce() {
         onInicio={() => {}}
         onCarrinho={() => setShowCarrinho(true)}
         onFinalizar={() => { if (myQtd > 0) setShowCarrinho(true); }}
-        empresaId={empresaId || null}
-        empresaNome={nomeEmpresa}
       />
     </View>
   );

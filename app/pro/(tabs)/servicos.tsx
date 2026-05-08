@@ -15,17 +15,13 @@ const POLL_MS = 5000;
 
 function fmtBRL(v: number) { return `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`; }
 function fmtHora(iso: string) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return `${d.getHours().toString().padStart(2,"0")}:${d.getMinutes().toString().padStart(2,"0")}`;
+  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 function fmtData(iso: string) {
-  if (!iso) return "";
   const d = new Date(iso);
   const hoje = new Date();
-  const MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
   if (d.toDateString() === hoje.toDateString()) return `Hoje ${fmtHora(iso)}`;
-  return `${d.getDate().toString().padStart(2,"0")} ${MESES[d.getMonth()]} ${fmtHora(iso)}`;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) + ` ${fmtHora(iso)}`;
 }
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {

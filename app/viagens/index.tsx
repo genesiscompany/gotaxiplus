@@ -35,7 +35,7 @@ interface Reserva {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const fmtBRL  = (v: string | number) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+const fmtBRL  = (v: string | number) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDate = (d: string) => {
   if (!d) return "";
   const [y, m, dd] = (d.split("T")[0]).split("-");

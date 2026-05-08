@@ -26,20 +26,15 @@ type Agendamento = {
 function fmtBRL(v: number) { return `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`; }
 
 function fmtDataHora(iso: string) {
-  if (!iso) return "";
   const d = new Date(iso);
   const hoje = new Date();
   const amanha = new Date(hoje); amanha.setDate(amanha.getDate() + 1);
   const isHoje = d.toDateString() === hoje.toDateString();
   const isAmanha = d.toDateString() === amanha.toDateString();
-  const h = d.getHours().toString().padStart(2, "0");
-  const m = d.getMinutes().toString().padStart(2, "0");
-  const hora = `${h}:${m}`;
-  const MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
-  const dataCurta = `${d.getDate().toString().padStart(2,"0")} ${MESES[d.getMonth()]}`;
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   if (isHoje)   return `Hoje às ${hora}`;
   if (isAmanha) return `Amanhã às ${hora}`;
-  return `${dataCurta} às ${hora}`;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) + ` às ${hora}`;
 }
 
 function tempoRestante(iso: string) {
