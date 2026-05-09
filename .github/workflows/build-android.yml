@@ -1,12 +1,12 @@
-name: Build Android AAB (Google Play)
+"name: Build Android AAB (Google Play)
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'app.json'
-      - 'eas.json'
+      - 'artifacts/saas-mobile/app.json'
+      - 'artifacts/saas-mobile/eas.json'
       - '.github/workflows/build-android.yml'
   workflow_dispatch:
     inputs:
@@ -28,6 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
+    defaults:
+      run:
+        working-directory: artifacts/saas-mobile
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,25 +47,31 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Detectar gerenciador de pacotes e instalar dependências
+      - name: Habilitar pnpm 10 via corepack
+        working-directory: ${{ github.workspace }}
         run: |
-          if [ -f "pnpm-lock.yaml" ]; then
-            npm install -g pnpm@10
-            pnpm install --no-frozen-lockfile
-          elif [ -f "yarn.lock" ]; then
-            npm install -g yarn
-            yarn install --frozen-lockfile
-          else
-            npm install
-          fi
+          npm install -g corepack@latest
+          corepack enable
+          corepack prepare pnpm@10.26.1 --activate
+          pnpm --version
+
+      - name: Instalar dependências (pnpm workspace)
+        working-directory: ${{ github.workspace }}
+        env:
+          NPM_CONFIG_NODE_LINKER: hoisted
+          NPM_CONFIG_SHAMEFULLY_HOIST: 'true'
+          NPM_CONFIG_PUBLIC_HOIST_PATTERN: '*'
+          EAS_BUILD: 'true'
+        run: pnpm install --no-frozen-lockfile
 
       - name: Install EAS CLI
+        working-directory: ${{ github.workspace }}
         run: npm install -g eas-cli@16.4.0
 
       - name: Verificar versão e arquivos
         run: |
-          echo "=== app.json ===" && node -e "const a=require('./app.json'); console.log('version:', a.expo.version, '| versionCode:', a.expo.android.versionCode)"
-          echo "=== eas.json ===" && cat eas.json
+          echo \"=== app.json ===\" && node -e \"const a=require('./app.json'); console.log('version:', a.expo.version, '| versionCode:', a.expo.android.versionCode)\"
+          echo \"=== eas.json ===\" && cat eas.json
 
       - name: Build Android (local — sem consumir cota EAS)
         env:
@@ -81,7 +91,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gotaxi-android-${{ github.event.inputs.profile || 'production' }}-v${{ github.run_number }}
-          path: build-output.aab
+          path: artifacts/saas-mobile/build-output.aab
           retention-days: 30
           if-no-files-found: error
 
@@ -89,9 +99,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-${{ github.event.inputs.profile || 'production' }}-build-${{ github.run_number }}"
-          gh release create "$TAG" \
+          TAG=\"android-${{ github.event.inputs.profile || 'production' }}-build-${{ github.run_number }}\"
+          gh release create \"$TAG\" \
             build-output.aab \
-            --title "GoTaxi Android ${{ github.event.inputs.profile || 'production' }} #${{ github.run_number }}" \
-            --notes "Build automático — Run #${{ github.run_number }}" \
+            --title \"GoTaxi Android ${{ github.event.inputs.profile || 'production' }} #${{ github.run_number }}\" \
+            --notes \"Build automático — Run #${{ github.run_number }}\" \
             --repo ${{ github.repository }}
+"
