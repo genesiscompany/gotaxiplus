@@ -1,3 +1,15 @@
+🛠️ COMO FAZER:
+1) Abre o arquivo no GitHub:
+🔗 https://github.com/genesiscompany/gotaxiplus/edit/main/artifacts/saas-mobile/app/cliente/ecommerce.tsx
+
+2) Apaga TUDO:
+Clica dentro do código
+Aperta Ctrl + A (seleciona tudo)
+Aperta Delete
+3) Cola o conteúdo abaixo (clica no botão Copy do bloco)
+⚠️ IMPORTANTE: Devido ao tamanho, vou enviar em 2 partes. Cole a parte 1 primeiro, depois cole a parte 2 logo abaixo (sem espaço entre elas).
+
+📋 PARTE 1 (linhas 1-260)
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, useColorScheme, Platform, Alert, ActivityIndicator, Image, TextInput } from "react-native";
 import PixPagamento from "@/components/PixPagamento";
@@ -56,18 +68,106 @@ export default function ClienteEcommerce() {
   const [showCarrinho, setShowCarrinho] = useState(false);
   const [pedidoFeito, setPedidoFeito] = useState(false);
   const [pedidoId, setPedidoId] = useState<number | null>(null);
-  setPedidoId(data.id ?? null);
-  pedidoFormaPagamentoRef.current = formaSel;
-  pedidoEmpresaIdRef.current = empresaId;
-  clearCart();
-  setShowCarrinho(false);
-  setPedidoFeito(true);
-  if (formaSel !== "pix") {
-  setTimeout(() => {
-  setPedidoFeito(false);
-  setFormaSel(null);
-  pedidoFormaPagamentoRef.current = null;
-  pedidoEmpresaIdRef.current = null;
+  const pedidoFormaPagamentoRef = useRef<string | null>(null);
+  const pedidoEmpresaIdRef = useRef<number | null>(null);
+  const [produtosDB, setProdutosDB] = useState<ProdutoDB[]>([]);
+  const [loadingProdutos, setLoadingProdutos] = useState(true);
+  const [enviandoPedido, setEnviandoPedido] = useState(false);
+  const [metodosPag, setMetodosPag] = useState<string[]>(["pix", "dinheiro", "credito", "debito"]);
+  const [formaSel, setFormaSel] = useState<string | null>(null);
+  const [tipoEntrega, setTipoEntrega] = useState<"delivery" | "retirar">("delivery");
+  const [horarioRetirada, setHorarioRetirada] = useState("");
+  const [taxaEntregaEco, setTaxaEntregaEco] = useState(0);
+  const [tempoEntregaEco, setTempoEntregaEco] = useState(30);
+
+  const params = useLocalSearchParams<{ empresaId?: string; nomeEmpresa?: string; corEmpresa?: string }>();
+  const empresaId = Number(params.empresaId ?? 0);
+  const nomeEmpresa = params.nomeEmpresa ?? "Loja Online";
+  const corEmpresa = params.corEmpresa ?? MOD_COLOR;
+
+  const { customer } = useCustomerAuth();
+  const { requireAuth } = useAuthGate("/cliente/ecommerce");
+  const { items, vendor, totalQtd, totalPreco, addItem, removeItem, updateQtd, clearCart } = useCart();
+
+  useEffect(() => {
+    if (!empresaId) { setLoadingProdutos(false); return; }
+    setLoadingProdutos(true);
+    fetch(`${API_BASE}/public/ecommerce/${empresaId}/produtos`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: ProdutoDB[]) => setProdutosDB(Array.isArray(data) ? data : []))
+      .catch(() => setProdutosDB([]))
+      .finally(() => setLoadingProdutos(false));
+
+    fetch(`${API_BASE}/public/ecommerce/${empresaId}/formas-pagamento`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data?.metodos) && data.metodos.length) setMetodosPag(data.metodos); })
+      .catch(() => {});
+
+    fetch(`${API_BASE}/public/ecommerce/${empresaId}/config-entrega`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) { setTaxaEntregaEco(Number(d.taxa_entrega ?? 0)); setTempoEntregaEco(Number(d.tempo_entrega_min ?? 30)); } })
+      .catch(() => {});
+  }, [empresaId]);
+
+  const topPadding = insets.top + (Platform.OS === "web" ? 67 : 0);
+  const produtosFiltrados = categoriaSel === "Todos" ? produtosDB : produtosDB.filter(p => (p.categoria ?? "") === categoriaSel);
+
+  const myItems = vendor?.id === empresaId ? items : [];
+  const myQtd = myItems.reduce((s, c) => s + c.qtd, 0);
+  const myTotal = myItems.reduce((s, c) => s + c.produto.preco * c.qtd, 0);
+
+  const vendor_info = { id: empresaId, nome: nomeEmpresa, cor: corEmpresa, modulo: "ecommerce" };
+
+  const handleAddCarrinho = (produto: ProdutoDB) => {
+    addItem(
+      { id: produto.id, nome: produto.nome, preco: Number(produto.preco_promocional || produto.preco), cor: MOD_COLOR },
+      vendor_info
+    );
+  };
+
+  const handleFinalizar = async () => {
+    if (enviandoPedido) return;
+    if (!formaSel) {
+      Alert.alert("Forma de pagamento", "Selecione uma forma de pagamento para continuar.");
+      return;
+    }
+    setEnviandoPedido(true);
+    try {
+      const taxa = tipoEntrega === "delivery" ? taxaEntregaEco : 0;
+      const totalFinal = myTotal + taxa;
+      const body = {
+        empresa_id: empresaId,
+        itens: myItems.map(c => ({ nome: c.produto.nome, quantidade: c.qtd, preco: c.produto.preco })),
+        total: totalFinal,
+        taxa_entrega: taxa,
+        tipo_entrega: tipoEntrega,
+        horario_retirada: tipoEntrega === "retirar" ? (horarioRetirada || "A combinar") : null,
+        cliente_nome: customer?.nome || "Cliente App",
+        cliente_telefone: customer?.whatsapp || "",
+        cliente_endereco: "",
+        forma_pagamento: formaSel,
+      };
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (customer?.token) headers["Authorization"] = `Bearer ${customer.token}`;
+      const res = await fetch(`${API_BASE}/public/ecommerce/pedido`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Erro ao finalizar");
+      setPedidoId(data.id ?? null);
+      pedidoFormaPagamentoRef.current = formaSel;
+      pedidoEmpresaIdRef.current = empresaId;
+      clearCart();
+      setShowCarrinho(false);
+      setPedidoFeito(true);
+      if (formaSel !== "pix") {
+        setTimeout(() => {
+          setPedidoFeito(false);
+          setFormaSel(null);
+          pedidoFormaPagamentoRef.current = null;
+          pedidoEmpresaIdRef.current = null;
         }, 4000);
       }
     } catch (err: any) {
@@ -99,6 +199,7 @@ export default function ClienteEcommerce() {
         </View>
       );
     }
+
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
         <View style={[styles.sucessoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -159,12 +260,9 @@ export default function ClienteEcommerce() {
               </View>
             ))
           )}
-          {myItems.length > 0 && (
-            <View style={[styles.totalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Subtotal</Text>
-                <Text style={[styles.totalValue, { color: colors.text, fontFamily: "Inter_600SemiBold" }]}>R$ {myTotal.toFixed(2)}</Text>
-              </View>
+          Aqui vai a PARTE 2! Cole logo abaixo da Parte 1 (sem espaço entre elas):
+
+📋 PARTE 2 (linhas 260 até o final)
               <View style={styles.totalRow}>
                 <Text style={[styles.totalLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Taxa de entrega</Text>
                 {tipoEntrega === "retirar" || taxaEntregaEco === 0 ? (
@@ -283,6 +381,8 @@ export default function ClienteEcommerce() {
       </View>
     );
   }
+
+  const categorias = ["Todos", ...Array.from(new Set(produtosDB.map(p => p.categoria).filter(Boolean) as string[]))];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
