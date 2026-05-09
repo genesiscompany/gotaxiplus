@@ -1,15 +1,3 @@
-🛠️ COMO FAZER:
-1) Abre o arquivo no GitHub:
-🔗 https://github.com/genesiscompany/gotaxiplus/edit/main/artifacts/saas-mobile/app/cliente/ecommerce.tsx
-
-2) Apaga TUDO:
-Clica dentro do código
-Aperta Ctrl + A (seleciona tudo)
-Aperta Delete
-3) Cola o conteúdo abaixo (clica no botão Copy do bloco)
-⚠️ IMPORTANTE: Devido ao tamanho, vou enviar em 2 partes. Cole a parte 1 primeiro, depois cole a parte 2 logo abaixo (sem espaço entre elas).
-
-📋 PARTE 1 (linhas 1-260)
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, useColorScheme, Platform, Alert, ActivityIndicator, Image, TextInput } from "react-native";
 import PixPagamento from "@/components/PixPagamento";
@@ -260,10 +248,8 @@ export default function ClienteEcommerce() {
               </View>
             ))
           )}
-          Aqui vai a PARTE 2! Cole logo abaixo da Parte 1 (sem espaço entre elas):
 
-📋 PARTE 2 (linhas 260 até o final)
-              <View style={styles.totalRow}>
+             <View style={styles.totalRow}>
                 <Text style={[styles.totalLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Taxa de entrega</Text>
                 {tipoEntrega === "retirar" || taxaEntregaEco === 0 ? (
                   <Text style={[styles.totalValue, { color: "#10B981", fontFamily: "Inter_600SemiBold" }]}>Grátis</Text>
