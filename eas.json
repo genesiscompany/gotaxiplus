@@ -1,22 +1,17 @@
 {
   "cli": {
-    "version": ">= 12.0.0"
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "android": {
-        "buildType": "apk"
-      }
-    },
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "gotaxi.com.br"
+        "EXPO_PUBLIC_DOMAIN": "gotaxiplus.replit.app"
       }
     },
     "production": {
@@ -24,7 +19,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "gotaxi.com.br"
+        "EXPO_PUBLIC_DOMAIN": "gotaxiplus.replit.app"
       }
     }
   },
