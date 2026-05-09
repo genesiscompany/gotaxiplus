@@ -85,11 +85,11 @@ export default function ClienteEcommerce() {
       .then(data => { if (Array.isArray(data)) setProdutosDB(data); })
       .catch(() => {})
       .finally(() => setLoadingProdutos(false));
-    fetch(`${API_BASE}/public/servicos/${empresaId}/formas-pagamento`)
+    fetch(`${API_BASE}/public/ecommerce/${empresaId}/formas-pagamento`)
       .then(r => r.json())
       .then(data => { if (Array.isArray(data?.metodos) && data.metodos.length) setMetodosPag(data.metodos); })
       .catch(() => {});
-    fetch(`${API_BASE}/food/empresa/${empresaId}/config-entrega`)
+    fetch(`${API_BASE}/public/ecommerce/${empresaId}/config-entrega`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) { setTaxaEntregaEco(Number(d.taxa_entrega ?? 0)); setTempoEntregaEco(Number(d.tempo_entrega_min ?? 30)); } })
       .catch(() => {});
