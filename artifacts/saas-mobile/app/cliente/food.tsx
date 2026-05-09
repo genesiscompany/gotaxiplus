@@ -590,7 +590,7 @@ export default function ClienteFood() {
                       <Text style={[{ color: "#EF4444", fontFamily: "Inter_600SemiBold", fontSize: 13 }]}>Fora do raio</Text>
                     ) : semEnderecoKm ? (
                       <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 12 }]}>informe o endereço</Text>
-                    ) : isFixa && (configEntrega?.taxa_fixa ?? 0) === 0 ? (
+                    ) : isFixa && Number(configEntrega?.taxa_fixa ?? 0) === 0 ? (
                       <Text style={[{ color: "#10B981", fontFamily: "Inter_600SemiBold", fontSize: 14 }]}>Grátis</Text>
                     ) : (
                       <Text style={[{ color: taxaEntrega > 0 ? colors.text : "#10B981", fontFamily: "Inter_600SemiBold", fontSize: 14 }]}>
@@ -695,7 +695,7 @@ export default function ClienteFood() {
                         ) : freteInfo?.distancia_km ? (
                           <Text style={[{ color: "#10B981", fontFamily: "Inter_400Regular", fontSize: 12 }]}>✓ {freteInfo.distancia_km} km • frete R$ {taxaCalculada?.toFixed(2)}</Text>
                         ) : numero ? (
-                          <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>Taxa mínima: R$ {configEntrega.taxa_minima.toFixed(2)}</Text>
+                          <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>Taxa mínima: R$ {Number(configEntrega.taxa_minima ?? 0).toFixed(2)}</Text>
                         ) : (
                           <Text style={[{ color: colors.textMuted, fontFamily: "Inter_400Regular", fontSize: 11 }]}>Informe o número para calcular o frete</Text>
                         )
@@ -950,9 +950,9 @@ export default function ClienteFood() {
                             {produto.descricao}
                           </Text>
                         )}
-                        {produto.extras.length > 0 && (
+                        {(produto.extras?.length ?? 0) > 0 && (
                           <Text style={[styles.itemExtras, { color: accentColor + "CC", fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
-                            {produto.extras.length} opç{produto.extras.length === 1 ? "ão" : "ões"} disponíve{produto.extras.length === 1 ? "l" : "is"}
+                            {produto.extras!.length} opç{produto.extras!.length === 1 ? "ão" : "ões"} disponíve{produto.extras!.length === 1 ? "l" : "is"}
                           </Text>
                         )}
                         {produto.preco_promocional != null && Number(produto.preco_promocional) > 0 ? (
@@ -1427,9 +1427,10 @@ function ProdutoModal({ produto, accentColor, colors, insets, onClose, onAdd, pr
             })}
 
             {/* ── Extras avulsos ────────────────────────────────────── */}
-            {produto.extras.length > 0 && (() => {
-              const extrasObrig = produto.extras.filter(e => e.obrigatorio);
-              const extrasOpc = produto.extras.filter(e => !e.obrigatorio);
+         {(produto.extras?.length ?? 0) > 0 && (() => {
+          const extrasArr = produto.extras ?? [];
+          const extrasObrig = extrasArr.filter(e => e.obrigatorio);
+          const extrasOpc = extrasArr.filter(e => !e.obrigatorio);
               const missingObrig = extrasObrig.filter(e => !extrasSel.find(s => s.id === e.id));
               const renderExtra = (extra: Extra) => {
                 const sel = !!extrasSel.find(e => e.id === extra.id);
@@ -1516,8 +1517,8 @@ function ProdutoModal({ produto, accentColor, colors, insets, onClose, onAdd, pr
                 <Feather name="plus" size={16} color="#fff" />
               </Pressable>
             </View>
-            {(() => {
-              const extrasObrig = produto.extras.filter(e => e.obrigatorio);
+             {(() => {
+              const extrasObrig = (produto.extras ?? []).filter(e => e.obrigatorio);
               const missingExtrasObrig = extrasObrig.filter(e => !extrasSel.find(s => s.id === e.id));
               const missingGrupos = grupos.filter(g => g.obrigatorio && (gruposSel[g.id]?.length ?? 0) < g.min_selecoes);
               const canAdd = missingExtrasObrig.length === 0 && missingGrupos.length === 0;
