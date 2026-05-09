@@ -1,3 +1,23 @@
+⚠️ INSTRUÇÕES IMPORTANTES (lê com atenção):
+Passo 1 — Abra o arquivo:
+🔗 https://github.com/genesiscompany/gotaxiplus/edit/main/artifacts/saas-mobile/app/cliente/ecommerce.tsx
+
+Passo 2 — Apaga TUDO:
+Clica dentro do código
+Ctrl + A (seleciona tudo)
+Delete (apaga tudo) — editor fica em branco
+Passo 3 — Copia o código abaixo
+⚠️ NÃO copie esta linha em cima! Use o botão "Copy" que aparece no canto superior direito do bloco de código abaixo. Esse botão copia EXATAMENTE o conteúdo do bloco, sem texto extra.
+
+Passo 4 — Cola no editor (Ctrl + V)
+Passo 5 — Verifica:
+Linha 1 deve ser: import React, { useState, useEffect, useRef } from "react";
+Última linha deve ser: });
+Passo 6 — Commita:
+Mensagem: fix(ecommerce): substitui arquivo completo com PIX corrigido
+Commit directly to main
+Commit changes
+📥 CÓDIGO COMPLETO (copia pelo botão "Copy" do bloco):
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, useColorScheme, Platform, Alert, ActivityIndicator, Image, TextInput } from "react-native";
 import PixPagamento from "@/components/PixPagamento";
@@ -81,24 +101,24 @@ export default function ClienteEcommerce() {
     if (!empresaId) { setLoadingProdutos(false); return; }
     setLoadingProdutos(true);
     fetch(`${API_BASE}/public/ecommerce/${empresaId}/produtos`)
-      .then(r => r.ok ? r.json() : [])
-      .then((data: ProdutoDB[]) => setProdutosDB(Array.isArray(data) ? data : []))
-      .catch(() => setProdutosDB([]))
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setProdutosDB(data); })
+      .catch(() => {})
       .finally(() => setLoadingProdutos(false));
-
-    fetch(`${API_BASE}/public/ecommerce/${empresaId}/formas-pagamento`)
-      .then(r => r.ok ? r.json() : null)
+    fetch(`${API_BASE}/public/servicos/${empresaId}/formas-pagamento`)
+      .then(r => r.json())
       .then(data => { if (Array.isArray(data?.metodos) && data.metodos.length) setMetodosPag(data.metodos); })
       .catch(() => {});
-
-    fetch(`${API_BASE}/public/ecommerce/${empresaId}/config-entrega`)
+    fetch(`${API_BASE}/food/empresa/${empresaId}/config-entrega`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) { setTaxaEntregaEco(Number(d.taxa_entrega ?? 0)); setTempoEntregaEco(Number(d.tempo_entrega_min ?? 30)); } })
       .catch(() => {});
   }, [empresaId]);
 
   const topPadding = insets.top + (Platform.OS === "web" ? 67 : 0);
-  const produtosFiltrados = categoriaSel === "Todos" ? produtosDB : produtosDB.filter(p => (p.categoria ?? "") === categoriaSel);
+
+  const categorias = ["Todos", ...Array.from(new Set(produtosDB.map(p => p.categoria).filter(Boolean) as string[]))];
+  const produtosFiltrados = categoriaSel === "Todos" ? produtosDB : produtosDB.filter(p => p.categoria === categoriaSel);
 
   const myItems = vendor?.id === empresaId ? items : [];
   const myQtd = myItems.reduce((s, c) => s + c.qtd, 0);
@@ -187,7 +207,6 @@ export default function ClienteEcommerce() {
         </View>
       );
     }
-
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
         <View style={[styles.sucessoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -248,8 +267,13 @@ export default function ClienteEcommerce() {
               </View>
             ))
           )}
-
-             <View style={styles.totalRow}>
+          {myItems.length > 0 && (
+            <View style={[styles.totalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Subtotal</Text>
+                <Text style={[styles.totalValue, { color: colors.text, fontFamily: "Inter_600SemiBold" }]}>R$ {myTotal.toFixed(2)}</Text>
+              </View>
+              <View style={styles.totalRow}>
                 <Text style={[styles.totalLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Taxa de entrega</Text>
                 {tipoEntrega === "retirar" || taxaEntregaEco === 0 ? (
                   <Text style={[styles.totalValue, { color: "#10B981", fontFamily: "Inter_600SemiBold" }]}>Grátis</Text>
@@ -367,8 +391,6 @@ export default function ClienteEcommerce() {
       </View>
     );
   }
-
-  const categorias = ["Todos", ...Array.from(new Set(produtosDB.map(p => p.categoria).filter(Boolean) as string[]))];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
