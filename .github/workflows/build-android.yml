@@ -1,6 +1,16 @@
-"name: Build Android AAB (Google Play)
+name: Build Android AAB (Google Play)
 
 on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Build profile'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - production
+          - preview
   push:
     branches:
       - main
@@ -8,23 +18,13 @@ on:
       - 'artifacts/saas-mobile/app.json'
       - 'artifacts/saas-mobile/eas.json'
       - '.github/workflows/build-android.yml'
-  workflow_dispatch:
-    inputs:
-      profile:
-        description: 'Build profile'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - preview
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build Android ${{ github.event.inputs.profile || 'production' }}
+    name: Build Android ${{ github.event.inputs.profile || 'preview' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -70,8 +70,8 @@ jobs:
 
       - name: Verificar versão e arquivos
         run: |
-          echo \"=== app.json ===\" && node -e \"const a=require('./app.json'); console.log('version:', a.expo.version, '| versionCode:', a.expo.android.versionCode)\"
-          echo \"=== eas.json ===\" && cat eas.json
+          echo "=== app.json ===" && node -e "const a=require('./app.json'); console.log('version:', a.expo.version, '| versionCode:', a.expo.android.versionCode)"
+          echo "=== eas.json ===" && cat eas.json
 
       - name: Build Android (local — sem consumir cota EAS)
         env:
@@ -82,7 +82,7 @@ jobs:
         run: |
           eas build \
             --platform android \
-            --profile ${{ github.event.inputs.profile || 'production' }} \
+            --profile ${{ github.event.inputs.profile || 'preview' }} \
             --local \
             --non-interactive \
             --output ./build-output.aab
@@ -90,7 +90,7 @@ jobs:
       - name: Upload AAB como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: gotaxi-android-${{ github.event.inputs.profile || 'production' }}-v${{ github.run_number }}
+          name: gotaxi-android-${{ github.event.inputs.profile || 'preview' }}-v${{ github.run_number }}
           path: artifacts/saas-mobile/build-output.aab
           retention-days: 30
           if-no-files-found: error
@@ -98,11 +98,11 @@ jobs:
       - name: Criar GitHub Release com o AAB
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: ${{ github.workspace }}
         run: |
-          TAG=\"android-${{ github.event.inputs.profile || 'production' }}-build-${{ github.run_number }}\"
-          gh release create \"$TAG\" \
-            build-output.aab \
-            --title \"GoTaxi Android ${{ github.event.inputs.profile || 'production' }} #${{ github.run_number }}\" \
-            --notes \"Build automático — Run #${{ github.run_number }}\" \
+          TAG="android-${{ github.event.inputs.profile || 'preview' }}-build-${{ github.run_number }}"
+          gh release create "$TAG" \
+            artifacts/saas-mobile/build-output.aab \
+            --title "GoTaxi Android ${{ github.event.inputs.profile || 'preview' }} #${{ github.run_number }}" \
+            --notes "Build automático — Run #${{ github.run_number }}" \
             --repo ${{ github.repository }}
-"
